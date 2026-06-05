@@ -47,19 +47,19 @@
         android:backgroundTint="#2196F3"/>
 
     <Button
-        android:id="@+id/btnExtractAudio"
+        android:id="@+id/btnExtractAudioM4A"
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:text="🎵 提取音频"
+        android:text="🎵 提取音频 (M4A)"
         android:textSize="18sp"
         android:layout_marginTop="16dp"
         android:backgroundTint="#4CAF50"/>
 
     <Button
-        android:id="@+id/btnTestLog"
+        android:id="@+id/btnExtractAudioMP3"
         android:layout_width="match_parent"
         android:layout_height="56dp"
-        android:text="📝 生成测试文件 (123)"
+        android:text="🎶 提取音频 (MP3)"
         android:textSize="18sp"
         android:layout_marginTop="16dp"
         android:backgroundTint="#FF9800"/>

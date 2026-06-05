@@ -2,8 +2,7 @@ package com.simple.video2audio;
 
 import android.Manifest;
 import android.content.Intent;
-import android.media.MediaExtractor;
-import android.media.MediaMuxer;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -12,13 +11,20 @@ import android.provider.Settings;
 import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
+
+import com.github.hiteshsondhi88.libffmpeg.ExecuteBinaryResponseHandler;
+import com.github.hiteshsondhi88.libffmpeg.FFmpeg;
+import com.github.hiteshsondhi88.libffmpeg.LoadBinaryResponseHandler;
+import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegCommandAlreadyRunningException;
+import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegNotSupportedException;
 
 import java.io.File;
-import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.InputStream;
@@ -29,19 +35,25 @@ import java.util.Locale;
 public class MainActivity extends AppCompatActivity {
 
     private Button btnSelectVideo;
-    private Button btnExtractAudio;
-    private Button btnTestLog;
+    private Button btnExtractAudioM4A;
+    private Button btnExtractAudioMP3;
     private ProgressBar progressBar;
     private TextView txtStatus;
     
+    private FFmpeg ffmpeg;
     private Uri selectedVideoUri = null;
     private File tempVideoFile = null;
     private File logFile;
+    private String outputFormat = "m4a"; // 默认 M4A
     
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) pickVideo();
-                else showErrorDialog("需要权限", "请授权存储权限");
+                if (isGranted) {
+                    pickVideo();
+                } else {
+                    writeLog("权限被拒绝：READ_MEDIA_VIDEO");
+                    showErrorDialog("需要权限", "请授权存储权限以选择视频文件。");
+                }
             });
 
     @Override
@@ -52,6 +64,7 @@ public class MainActivity extends AppCompatActivity {
         initLogFile();
         initViews();
         setupListeners();
+        loadFFmpeg();
     }
     
     private void initLogFile() {
@@ -59,18 +72,14 @@ public class MainActivity extends AppCompatActivity {
         writeLog("Android: " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + ")");
         writeLog("手机：" + Build.BRAND + " " + Build.MODEL);
         
-        File musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                writeLog("请求 MANAGE_EXTERNAL_STORAGE 权限");
-                requestManageStoragePermission();
-            } else {
-                writeLog("MANAGE_EXTERNAL_STORAGE 已授权");
-            }
+        // 日志路径改为 /sdcard/douyinguanjia/Log/
+        File logDir = new File(Environment.getExternalStorageDirectory(), "douyinguanjia/Log");
+        if (!logDir.exists()) {
+            boolean created = logDir.mkdirs();
+            writeLog("创建日志目录：" + logDir.getAbsolutePath() + " = " + created);
         }
-        if (!musicDir.exists()) musicDir.mkdirs();
-        logFile = new File(musicDir, "VideoToAudio.log");
-        writeLog("日志：" + logFile.getAbsolutePath());
+        logFile = new File(logDir, "videoEdit.log");
+        writeLog("日志文件：" + logFile.getAbsolutePath());
     }
     
     private void writeLog(String msg) {
@@ -80,60 +89,106 @@ public class MainActivity extends AppCompatActivity {
             w.append("[").append(ts).append("] ").append(msg).append("\n");
             w.flush();
             w.close();
-        } catch (Exception e) { e.printStackTrace(); }
+        } catch (Exception e) { 
+            e.printStackTrace(); 
+        }
     }
     
     private void initViews() {
         btnSelectVideo = findViewById(R.id.btnSelectVideo);
-        btnExtractAudio = findViewById(R.id.btnExtractAudio);
-        btnTestLog = findViewById(R.id.btnTestLog);
+        btnExtractAudioM4A = findViewById(R.id.btnExtractAudioM4A);
+        btnExtractAudioMP3 = findViewById(R.id.btnExtractAudioMP3);
         progressBar = findViewById(R.id.progressBar);
         txtStatus = findViewById(R.id.txtStatus);
-        btnExtractAudio.setEnabled(false);
+        
+        btnExtractAudioM4A.setEnabled(false);
+        btnExtractAudioMP3.setEnabled(false);
     }
     
     private void requestManageStoragePermission() {
-        try {
-            Intent i = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
-            i.setData(Uri.parse("package:" + getPackageName()));
-            startActivity(i);
-        } catch (Exception e) {
-            writeLog("跳转设置失败：" + e.getMessage());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            writeLog("跳转到设置页面请求 MANAGE_EXTERNAL_STORAGE 权限");
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                intent.setData(Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            } catch (Exception e) {
+                writeLog("启动设置页面失败：" + e.getMessage());
+                try {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                    startActivity(intent);
+                } catch (Exception ex) {
+                    showErrorDialog("权限错误", "无法打开设置页面：" + ex.getMessage());
+                }
+            }
         }
     }
     
     private void setupListeners() {
         btnSelectVideo.setOnClickListener(v -> {
             writeLog("点击选择视频");
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-                requestManageStoragePermission();
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                requestPermissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO);
-            } else {
-                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE);
-            }
+            checkPermissionAndPickVideo();
         });
         
-        btnExtractAudio.setOnClickListener(v -> {
-            writeLog("点击提取音频");
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-                requestManageStoragePermission();
-            } else if (selectedVideoUri != null) {
-                extractAudio();
-            }
+        btnExtractAudioM4A.setOnClickListener(v -> {
+            writeLog("点击提取 M4A 音频");
+            outputFormat = "m4a";
+            checkPermissionAndExtract();
         });
         
-        btnTestLog.setOnClickListener(v -> {
-            writeLog("点击测试文件");
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-                requestManageStoragePermission();
-            } else {
-                generateTestFile();
-            }
+        btnExtractAudioMP3.setOnClickListener(v -> {
+            writeLog("点击提取 MP3 音频");
+            outputFormat = "mp3";
+            checkPermissionAndExtract();
         });
     }
     
+    private void checkPermissionAndPickVideo() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+ 需要 MANAGE_EXTERNAL_STORAGE
+            if (!Environment.isExternalStorageManager()) {
+                writeLog("无 MANAGE_EXTERNAL_STORAGE 权限，跳转设置");
+                requestManageStoragePermission();
+                return;
+            }
+        }
+        
+        // 检查媒体权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) 
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO);
+                return;
+            }
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) 
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE);
+                return;
+            }
+        }
+        
+        pickVideo();
+    }
+    
+    private void checkPermissionAndExtract() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                writeLog("无 MANAGE_EXTERNAL_STORAGE 权限，跳转设置");
+                requestManageStoragePermission();
+                return;
+            }
+        }
+        
+        if (selectedVideoUri != null && tempVideoFile != null && tempVideoFile.exists()) {
+            extractAudio();
+        } else {
+            showErrorDialog("错误", "请先选择视频文件");
+        }
+    }
+    
     private void pickVideo() {
+        writeLog("启动视频选择器");
         videoPickerLauncher.launch("video/*");
     }
     
@@ -142,141 +197,216 @@ public class MainActivity extends AppCompatActivity {
                 if (uri != null) {
                     writeLog("选择视频：" + uri);
                     selectedVideoUri = uri;
-                    btnExtractAudio.setEnabled(true);
-                    txtStatus.setText("视频已选");
+                    btnExtractAudioM4A.setEnabled(true);
+                    btnExtractAudioMP3.setEnabled(true);
+                    txtStatus.setText("视频已选择");
+                    
                     try {
                         tempVideoFile = copyVideoToCache(uri);
-                        writeLog(tempVideoFile != null ? 
-                            "✓ 复制到缓存：" + tempVideoFile.length() + " 字节" : 
-                            "✗ 复制失败");
+                        if (tempVideoFile == null) {
+                            writeLog("复制视频失败：inputStream 为 null");
+                            showErrorDialog("读取失败", "无法读取视频文件");
+                        } else {
+                            writeLog("✓ 复制到缓存：" + tempVideoFile.getAbsolutePath());
+                            writeLog("文件大小：" + tempVideoFile.length() + " 字节");
+                            writeLog("文件可读：" + tempVideoFile.canRead());
+                        }
                     } catch (Exception e) {
                         writeLog("✗ 复制异常：" + e.getMessage());
+                        showErrorDialog("错误", e.getMessage());
                     }
+                } else {
+                    writeLog("用户取消选择");
                 }
             });
     
     private File copyVideoToCache(Uri uri) throws Exception {
-        File f = new File(getCacheDir(), "temp_" + System.currentTimeMillis() + ".mp4");
-        try (InputStream in = getContentResolver().openInputStream(uri);
-             FileOutputStream out = new FileOutputStream(f)) {
-            if (in == null) return null;
-            byte[] buf = new byte[4096];
-            int n;
-            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
-            out.flush();
+        File cacheDir = getCacheDir();
+        writeLog("缓存目录：" + cacheDir.getAbsolutePath());
+        
+        String fileName = "temp_video_" + System.currentTimeMillis() + ".mp4";
+        File cacheFile = new File(cacheDir, fileName);
+        writeLog("目标文件：" + cacheFile.getAbsolutePath());
+        
+        InputStream inputStream = null;
+        FileOutputStream outputStream = null;
+        
+        try {
+            inputStream = getContentResolver().openInputStream(uri);
+            if (inputStream == null) {
+                writeLog("ERROR: 无法打开 input stream");
+                return null;
+            }
+            writeLog("✓ input stream 打开成功");
+            
+            outputStream = new FileOutputStream(cacheFile);
+            writeLog("✓ output stream 打开成功");
+            
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            long totalBytes = 0;
+            
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, bytesRead);
+                totalBytes += bytesRead;
+            }
+            
+            outputStream.flush();
+            writeLog("✓ 复制完成：" + totalBytes + " 字节");
+            
+        } finally {
+            if (inputStream != null) inputStream.close();
+            if (outputStream != null) outputStream.close();
         }
-        return f.exists() && f.canRead() ? f : null;
+        
+        // 校验文件
+        if (!cacheFile.exists()) {
+            writeLog("ERROR: 缓存文件不存在");
+            return null;
+        }
+        if (!cacheFile.canRead()) {
+            writeLog("ERROR: 缓存文件不可读");
+            return null;
+        }
+        
+        writeLog("✓ 文件校验成功：" + cacheFile.length() + " 字节");
+        return cacheFile;
+    }
+    
+    private void loadFFmpeg() {
+        progressBar.setVisibility(ProgressBar.VISIBLE);
+        writeLog("加载 FFmpeg...");
+        try {
+            ffmpeg = FFmpeg.getInstance(this);
+            ffmpeg.loadBinary(new LoadBinaryResponseHandler() {
+                @Override
+                public void onSuccess() {
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    txtStatus.setText("FFmpeg 已加载，请选择视频");
+                    writeLog("✓ FFmpeg 加载成功");
+                }
+                @Override
+                public void onFailure() {
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    writeLog("✗ FFmpeg 加载失败：设备不支持");
+                    showErrorDialog("设备不支持", "您的设备不支持 FFmpeg");
+                }
+            });
+        } catch (FFmpegNotSupportedException e) {
+            progressBar.setVisibility(ProgressBar.GONE);
+            writeLog("✗ FFmpeg 不支持：" + e.getMessage());
+            showErrorDialog("设备不支持", e.getMessage());
+        } catch (Exception e) {
+            progressBar.setVisibility(ProgressBar.GONE);
+            writeLog("✗ FFmpeg 异常：" + e.getMessage());
+            showErrorDialog("错误", e.getMessage());
+        }
     }
     
     private void extractAudio() {
-        writeLog("=== 开始提取 ===");
+        writeLog("=== 开始提取音频 ===");
+        writeLog("格式：" + outputFormat);
+        
         if (selectedVideoUri == null || tempVideoFile == null || !tempVideoFile.exists()) {
             writeLog("✗ 文件无效");
             showErrorDialog("错误", "请重新选择视频");
             return;
         }
-        writeLog("源文件：" + tempVideoFile.getAbsolutePath() + " (" + tempVideoFile.length() + " 字节)");
+        
+        writeLog("源文件：" + tempVideoFile.getAbsolutePath());
+        writeLog("源大小：" + tempVideoFile.length() + " 字节");
+        writeLog("源可读：" + tempVideoFile.canRead());
         
         progressBar.setVisibility(ProgressBar.VISIBLE);
-        btnExtractAudio.setEnabled(false);
+        btnExtractAudioM4A.setEnabled(false);
+        btnExtractAudioMP3.setEnabled(false);
         txtStatus.setText("正在提取...");
         
-        new Thread(() -> {
-            try {
-                File outDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
-                if (!outDir.exists()) outDir.mkdirs();
-                File outFile = new File(outDir, "audio_" + System.currentTimeMillis() + ".m4a");
-                
-                writeLog("使用 Android 原生 MediaExtractor 提取音频");
-                writeLog("输出文件：" + outFile.getAbsolutePath());
-                
-                MediaExtractor extractor = new MediaExtractor();
-                extractor.setDataSource(tempVideoFile.getAbsolutePath());
-                
-                int audioTrackIndex = -1;
-                for (int i = 0; i < extractor.getTrackCount(); i++) {
-                    android.media.MediaFormat format = extractor.getTrackFormat(i);
-                    String mime = format.getString(android.media.MediaFormat.KEY_MIME);
-                    writeLog("轨道 " + i + ": " + mime);
-                    if (mime != null && mime.startsWith("audio/")) {
-                        audioTrackIndex = i;
-                        writeLog("找到音频轨道：" + i);
-                        break;
-                    }
-                }
-                
-                if (audioTrackIndex == -1) {
-                    writeLog("✗ 未找到音频轨道");
-                    runOnUiThread(() -> {
-                        progressBar.setVisibility(ProgressBar.GONE);
-                        btnExtractAudio.setEnabled(true);
-                        showErrorDialog("提取失败", "视频中未找到音频轨道");
-                    });
-                    return;
-                }
-                
-                extractor.selectTrack(audioTrackIndex);
-                android.media.MediaFormat audioFormat = extractor.getTrackFormat(audioTrackIndex);
-                
-                MediaMuxer muxer = new MediaMuxer(outFile.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-                int muxerTrackIndex = muxer.addTrack(audioFormat);
-                muxer.start();
-                
-                java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(4 * 1024 * 1024);
-                android.media.MediaCodec.BufferInfo bufferInfo = new android.media.MediaCodec.BufferInfo();
-                long totalBytes = 0;
-                
-                while (true) {
-                    int sampleSize = extractor.readSampleData(buffer, 0);
-                    if (sampleSize < 0) {
-                        writeLog("提取完成");
-                        break;
-                    }
-                    
-                    bufferInfo.offset = 0;
-                    bufferInfo.size = sampleSize;
-                    bufferInfo.presentationTimeUs = extractor.getSampleTime();
-                    bufferInfo.flags = extractor.getSampleFlags();
-                    
-                    muxer.writeSampleData(muxerTrackIndex, buffer, bufferInfo);
-                    totalBytes += sampleSize;
-                    
-                    if (totalBytes % (1024 * 1024) < 10240) {
-                        writeLog("已提取：" + (totalBytes / 1024 / 1024) + " MB");
-                        final long progressMb = totalBytes / 1024 / 1024;
-                        runOnUiThread(() -> txtStatus.setText("提取中... " + progressMb + "MB"));
-                    }
-                    
-                    extractor.advance();
-                }
-                
-                muxer.stop();
-                muxer.release();
-                extractor.release();
-                
-                writeLog("✓ 提取成功：" + outFile.getAbsolutePath() + " (" + outFile.length() + " 字节)");
-                
-                if (tempVideoFile != null && tempVideoFile.exists()) {
-                    tempVideoFile.delete();
-                    writeLog("已删除临时文件");
-                }
-                
-                runOnUiThread(() -> {
+        File outDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
+        if (!outDir.exists()) outDir.mkdirs();
+        
+        String ext = outputFormat.equals("mp3") ? ".mp3" : ".m4a";
+        File outFile = new File(outDir, "audio_" + System.currentTimeMillis() + ext);
+        writeLog("输出文件：" + outFile.getAbsolutePath());
+        
+        String[] cmd;
+        if (outputFormat.equals("mp3")) {
+            cmd = new String[]{
+                "-y", "-i", tempVideoFile.getAbsolutePath(),
+                "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k", "-f", "mp3",
+                outFile.getAbsolutePath()
+            };
+        } else {
+            cmd = new String[]{
+                "-y", "-i", tempVideoFile.getAbsolutePath(),
+                "-vn", "-acodec", "aac", "-ar", "44100", "-ac", "2", "-b:a", "128k",
+                outFile.getAbsolutePath()
+            };
+        }
+        
+        writeLog("FFmpeg 命令：" + String.join(" ", cmd));
+        
+        try {
+            ffmpeg.execute(cmd, new ExecuteBinaryResponseHandler() {
+                @Override
+                public void onSuccess(String s) {
+                    writeLog("✓ onSuccess: " + s);
                     progressBar.setVisibility(ProgressBar.GONE);
-                    btnExtractAudio.setEnabled(true);
+                    btnExtractAudioM4A.setEnabled(true);
+                    btnExtractAudioMP3.setEnabled(true);
+                    
+                    if (tempVideoFile != null && tempVideoFile.exists()) {
+                        tempVideoFile.delete();
+                        writeLog("已删除临时文件");
+                    }
+                    
+                    writeLog("输出文件存在：" + outFile.exists());
+                    if (outFile.exists()) {
+                        writeLog("输出大小：" + outFile.length() + " 字节");
+                    }
+                    
                     showSuccessDialog(outFile.getAbsolutePath());
-                });
+                }
                 
-            } catch (Exception e) {
-                writeLog("✗ 提取异常：" + e.getClass().getName() + ": " + e.getMessage());
-                e.printStackTrace();
-                runOnUiThread(() -> {
+                @Override
+                public void onFailure(String s) {
+                    writeLog("✗ onFailure: " + (s == null ? "null" : s));
                     progressBar.setVisibility(ProgressBar.GONE);
-                    btnExtractAudio.setEnabled(true);
-                    showErrorDialog("提取失败", e.getClass().getName() + ": " + e.getMessage());
-                });
-            }
-        }).start();
+                    btnExtractAudioM4A.setEnabled(false);
+                    btnExtractAudioMP3.setEnabled(false);
+                    
+                    if (tempVideoFile != null && tempVideoFile.exists()) {
+                        tempVideoFile.delete();
+                    }
+                    
+                    showErrorDialog("提取失败", s == null ? "未知错误" : s);
+                }
+                
+                @Override
+                public void onProgress(String s) {
+                    writeLog("progress: " + s);
+                    txtStatus.setText("处理中...");
+                }
+                
+                @Override
+                public void onStart() {
+                    writeLog("onStart");
+                    txtStatus.setText("正在提取...");
+                }
+                
+                @Override
+                public void onFinish() {
+                    writeLog("onFinish");
+                    txtStatus.setText("完成");
+                }
+            });
+        } catch (FFmpegCommandAlreadyRunningException e) {
+            writeLog("✗ 命令已在运行：" + e.getMessage());
+            progressBar.setVisibility(ProgressBar.GONE);
+            btnExtractAudioM4A.setEnabled(true);
+            btnExtractAudioMP3.setEnabled(true);
+            showErrorDialog("错误", "命令已在执行");
+        }
     }
     
     private void showSuccessDialog(String path) {
@@ -297,29 +427,13 @@ public class MainActivity extends AppCompatActivity {
             .show();
     }
     
-    private void generateTestFile() {
-        File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
-        if (!dir.exists()) dir.mkdirs();
-        File f = new File(dir, "123.6");
-        try {
-            FileWriter w = new FileWriter(f);
-            w.write("123");
-            w.flush();
-            w.close();
-            writeLog("测试文件：" + (f.exists() ? "成功 " + f.length() + " 字节" : "失败"));
-            new AlertDialog.Builder(this).setTitle(f.exists() ? "✓ 成功" : "✗ 失败")
-                .setMessage(f.getAbsolutePath() + "\n" + (f.exists() ? f.length() : 0) + " 字节")
-                .setPositiveButton("确定", null).show();
-        } catch (Exception e) {
-            writeLog("测试文件异常：" + e.getMessage());
-            showErrorDialog("失败", e.getMessage());
-        }
-    }
-    
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (tempVideoFile != null && tempVideoFile.exists()) tempVideoFile.delete();
+        if (tempVideoFile != null && tempVideoFile.exists()) {
+            tempVideoFile.delete();
+            writeLog("清理临时文件");
+        }
         writeLog("应用关闭");
     }
 }

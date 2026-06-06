@@ -6,6 +6,7 @@ import android.app.Dialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.ColorDrawable;
+import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -13,10 +14,12 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.util.Log;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.VideoView;
+import android.widget.MediaController;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -32,12 +35,15 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_VIDEO = 100;
     private static final int PERMISSION_CODE = 100;
+    private static final String TAG = "VideoEditor";
+    
     private VideoView videoView;
     private SeekBar seekBar;
     private TextView tvLeft, tvRight, uploadVideo, tvCutStartTime, tvCutEndTime;
     private android.widget.Button btnSetStartPoint, btnSetEndPoint;
     private Dialog progressDialog;
     private Uri selectedVideoUri;
+    private String cachedVideoPath;
     private String filePath;
     private int duration;
     private int cutStartSec = 0;
@@ -65,8 +71,12 @@ public class MainActivity extends AppCompatActivity {
         progressDialog.setContentView(R.layout.dialog_singleoption_text);
         seekBar.setEnabled(false);
         
+        setupListeners();
+    }
+    
+    private void setupListeners() {
         btnSetStartPoint.setOnClickListener(v -> {
-            if (videoView != null) {
+            if (videoView != null && videoView.getCurrentPosition() > 0) {
                 cutStartSec = videoView.getCurrentPosition() / 1000;
                 tvCutStartTime.setText("起点：" + getTime(cutStartSec));
                 Toast.makeText(this, "起点已设为：" + getTime(cutStartSec), Toast.LENGTH_SHORT).show();
@@ -74,7 +84,7 @@ public class MainActivity extends AppCompatActivity {
         });
         
         btnSetEndPoint.setOnClickListener(v -> {
-            if (videoView != null) {
+            if (videoView != null && videoView.getCurrentPosition() > 0) {
                 cutEndSec = videoView.getCurrentPosition() / 1000;
                 tvCutEndTime.setText("终点：" + getTime(cutEndSec));
                 Toast.makeText(this, "终点已设为：" + getTime(cutEndSec), Toast.LENGTH_SHORT).show();
@@ -167,9 +177,57 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode == RESULT_OK && requestCode == REQUEST_VIDEO && data != null && data.getData() != null) {
             selectedVideoUri = data.getData();
-            videoView.setVideoURI(selectedVideoUri);
-            videoView.start();
-            videoView.setOnPreparedListener(mp -> {
+            Log.d(TAG, "Video selected, Uri: " + selectedVideoUri);
+            
+            // 先复制视频到缓存目录，再播放
+            String tempPath = copyVideoToCache(selectedVideoUri);
+            if (tempPath != null) {
+                cachedVideoPath = tempPath;
+                Log.d(TAG, "Video cached to: " + cachedVideoPath);
+                playVideo(cachedVideoPath);
+            } else {
+                Log.e(TAG, "Failed to copy video to cache");
+                Toast.makeText(this, "无法加载视频，请重试", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+    
+    private void playVideo(String videoPath) {
+        if (videoPath == null) {
+            Log.e(TAG, "videoPath is null");
+            return;
+        }
+        
+        File videoFile = new File(videoPath);
+        if (!videoFile.exists()) {
+            Log.e(TAG, "Video file does not exist: " + videoPath);
+            Toast.makeText(this, "视频文件不存在", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        if (videoFile.length() == 0) {
+            Log.e(TAG, "Video file is empty (0 bytes): " + videoPath);
+            Toast.makeText(this, "视频文件为空", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        Log.d(TAG, "Video file OK, size=" + videoFile.length() + " bytes");
+        
+        // 设置错误监听器
+        videoView.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+            @Override
+            public boolean onError(MediaPlayer mp, int what, int extra) {
+                Log.e(TAG, "VideoView Error: what=" + what + ", extra=" + extra);
+                Toast.makeText(MainActivity.this, "视频播放出错 (" + what + ")", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+        });
+        
+        // 设置准备监听器
+        videoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+            @Override
+            public void onPrepared(MediaPlayer mp) {
+                Log.d(TAG, "Video prepared, duration=" + mp.getDuration() + "ms");
                 duration = mp.getDuration() / 1000;
                 cutStartSec = 0;
                 cutEndSec = duration;
@@ -181,13 +239,27 @@ public class MainActivity extends AppCompatActivity {
                 seekBar.setMax(duration);
                 seekBar.setProgress(0);
                 seekBar.setEnabled(true);
+                
+                // 在 onPrepared 中启动播放
+                videoView.start();
+                Log.d(TAG, "Playback started");
+                
                 handler.postDelayed(runnable = () -> {
                     int pos = videoView.getCurrentPosition() / 1000;
                     if (!isSeeking) seekBar.setProgress(pos);
                     handler.postDelayed(runnable, 1000);
                 }, 1000);
-            });
-        }
+            }
+        });
+        
+        // 设置视频路径
+        videoView.setVideoPath(videoPath);
+        Log.d(TAG, "setVideoPath called: " + videoPath);
+        
+        // 添加 MediaController 以便用户控制播放
+        MediaController mediaController = new MediaController(this);
+        mediaController.setAnchorView(videoView);
+        videoView.setMediaController(mediaController);
     }
 
     @Override
@@ -200,7 +272,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (videoView != null) videoView.start();
+        if (videoView != null && videoView.isPlaying()) videoView.start();
     }
 
     private String getTime(int seconds) {
@@ -209,9 +281,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void executeCutVideo() {
-        String srcPath = copyVideoToCache(selectedVideoUri);
-        if (srcPath == null) {
-            Toast.makeText(this, "无法获取视频路径", Toast.LENGTH_SHORT).show();
+        if (cachedVideoPath == null) {
+            Toast.makeText(this, "请先选择视频", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        File cacheFile = new File(cachedVideoPath);
+        if (!cacheFile.exists() || cacheFile.length() == 0) {
+            Toast.makeText(this, "视频缓存文件无效", Toast.LENGTH_SHORT).show();
             return;
         }
         
@@ -226,10 +303,12 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         
+        Log.d(TAG, "Cut video: start=" + cutStartSec + ", end=" + cutEndSec + ", len=" + videoLen);
+        
         String[] cmd = {
             "-ss", String.valueOf(cutStartSec),
             "-y",
-            "-i", srcPath,
+            "-i", cachedVideoPath,
             "-t", String.valueOf(videoLen),
             "-c:v", "libx264",
             "-c:a", "aac",
@@ -242,9 +321,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void extractAudio() {
-        String srcPath = copyVideoToCache(selectedVideoUri);
-        if (srcPath == null) {
-            Toast.makeText(this, "无法获取视频路径", Toast.LENGTH_SHORT).show();
+        if (cachedVideoPath == null) {
+            Toast.makeText(this, "请先选择视频", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        File cacheFile = new File(cachedVideoPath);
+        if (!cacheFile.exists() || cacheFile.length() == 0) {
+            Toast.makeText(this, "视频缓存文件无效", Toast.LENGTH_SHORT).show();
             return;
         }
         
@@ -260,9 +344,11 @@ public class MainActivity extends AppCompatActivity {
         File dest = new File(audioDir, "audio_" + timestamp + ".mp3");
         filePath = dest.getAbsolutePath();
         
+        Log.d(TAG, "Extract audio to: " + filePath);
+        
         String[] cmd = {
             "-y",
-            "-i", srcPath,
+            "-i", cachedVideoPath,
             "-vn",
             "-ar", "44100",
             "-ac", "2",
@@ -278,12 +364,15 @@ public class MainActivity extends AppCompatActivity {
         for (String s : cmd) sb.append(s).append(" ");
         final String command = sb.toString();
         
+        Log.d(TAG, "FFmpeg command: " + command);
+        
         showProgress("处理中...");
         FFmpegKit.executeAsync(command, session -> {
             runOnUiThread(() -> {
                 hideProgress();
                 ReturnCode rc = session.getReturnCode();
                 if (ReturnCode.isSuccess(rc)) {
+                    Log.d(TAG, "FFmpeg completed successfully");
                     Toast.makeText(this, "处理完成", Toast.LENGTH_SHORT).show();
                     if (type == 1) {
                         startActivity(new Intent(this, PreviewActivity.class)
@@ -298,31 +387,64 @@ public class MainActivity extends AppCompatActivity {
                     String errorMsg = "处理失败";
                     if (session.getFailStackTrace() != null) {
                         errorMsg += ": " + session.getFailStackTrace();
+                        Log.e(TAG, "FFmpeg error: " + session.getFailStackTrace());
                     }
                     Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show();
                 }
-                
-                File cacheFile = new File(getCacheDir(), "temp_video_" + System.currentTimeMillis() + ".mp4");
-                if (cacheFile.exists()) cacheFile.delete();
             });
         }, null, null);
     }
 
     private String copyVideoToCache(Uri videoUri) {
-        if (videoUri == null) return null;
+        if (videoUri == null) {
+            Log.e(TAG, "videoUri is null");
+            return null;
+        }
+        
+        File cacheFile = new File(getCacheDir(), "temp_video_" + System.currentTimeMillis() + ".mp4");
+        
+        // 删除旧的缓存文件
+        File[] oldFiles = getCacheDir().listFiles((dir, name) -> name.startsWith("temp_video_"));
+        if (oldFiles != null) {
+            for (File f : oldFiles) f.delete();
+        }
+        
         try {
-            File cacheFile = new File(getCacheDir(), "temp_video_" + System.currentTimeMillis() + ".mp4");
+            Log.d(TAG, "Copying video to cache: " + cacheFile.getAbsolutePath());
+            
             try (InputStream inputStream = getContentResolver().openInputStream(videoUri);
                  FileOutputStream outputStream = new FileOutputStream(cacheFile)) {
-                byte[] buffer = new byte[1024 * 1024];
+                
+                if (inputStream == null) {
+                    Log.e(TAG, "Failed to open InputStream for Uri: " + videoUri);
+                    return null;
+                }
+                
+                byte[] buffer = new byte[1024 * 1024]; // 1MB buffer
                 int length;
+                long totalBytes = 0;
+                
                 while ((length = inputStream.read(buffer)) > 0) {
                     outputStream.write(buffer, 0, length);
+                    totalBytes += length;
                 }
+                
+                Log.d(TAG, "Copied " + totalBytes + " bytes");
             }
+            
+            // 验证文件大小
+            if (cacheFile.length() == 0) {
+                Log.e(TAG, "Copied file is empty");
+                cacheFile.delete();
+                return null;
+            }
+            
+            Log.d(TAG, "Cache file created, size=" + cacheFile.length() + " bytes");
             return cacheFile.getAbsolutePath();
+            
         } catch (Exception e) {
-            e.printStackTrace();
+            Log.e(TAG, "copyVideoToCache error", e);
+            if (cacheFile.exists()) cacheFile.delete();
             return null;
         }
     }
@@ -348,10 +470,6 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
         if (progressDialog != null) {
             progressDialog.dismiss();
-        }
-        File[] cacheFiles = getCacheDir().listFiles((dir, name) -> name.startsWith("temp_video_"));
-        if (cacheFiles != null) {
-            for (File f : cacheFiles) f.delete();
         }
     }
 }

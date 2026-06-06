@@ -4,9 +4,11 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
+import android.content.ContentValues;
+import android.os.Build;
 import android.os.Environment;
+import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Log;
 import android.widget.Button;
@@ -26,6 +28,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -177,20 +180,16 @@ public class MainActivity extends AppCompatActivity {
         progressBar.setVisibility(ProgressBar.VISIBLE);
         btnExtractAudio.setEnabled(false);
 
-        File outputDir = new File(getCacheDir(), "audio");
-        if (!outputDir.exists()) {
-            boolean created = outputDir.mkdirs();
-            writeLog("audio dir created: " + created);
-        }
-        
-        File outputFile = new File(outputDir, "audio_" + System.currentTimeMillis() + ".m4a");
+        long timestamp = System.currentTimeMillis();
+        File tempFile = new File(getCacheDir(), "temp_audio_" + timestamp + ".m4a");
+        String tempOutputPath = tempFile.getAbsolutePath();
         
         String srcPath = tempVideoFile.getAbsolutePath();
         String cmd = String.format("-y -i %s -vn -c:a aac -b:a 192k -ar 44100 -ac 2 %s",
-                quotePath(srcPath), quotePath(outputFile.getAbsolutePath()));
+                quotePath(srcPath), quotePath(tempOutputPath));
         
         writeLog("FFmpeg 命令：" + cmd);
-        writeLog("输出文件：" + outputFile.getAbsolutePath());
+        writeLog("临时输出文件：" + tempOutputPath);
         writeLog("源文件大小：" + tempVideoFile.length() + "B");
 
         final long startTime = System.currentTimeMillis();
@@ -198,25 +197,20 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onSuccess(String output) {
                 long duration = System.currentTimeMillis() - startTime;
-                writeLog("✅ 转换成功，耗时:" + duration + "ms, 大小:" + outputFile.length() + "B");
+                writeLog("✅ 转换成功，耗时:" + duration + "ms, 大小:" + tempFile.length() + "B");
                 Log.d("FFMPEG_RAW", "完整日志:\n" + output);
                 
-                File publicFile = copyToPublicDir(outputFile, ".m4a");
-                if (publicFile != null) {
-                    scanMediaFile(publicFile);
-                    writeLog("✅ 已保存:" + publicFile.getAbsolutePath());
-                    runOnUiThread(() -> {
-                        progressBar.setVisibility(ProgressBar.GONE);
-                        btnExtractAudio.setEnabled(true);
-                        showSuccessDialog(publicFile.getAbsolutePath());
-                    });
-                } else {
-                    runOnUiThread(() -> {
-                        progressBar.setVisibility(ProgressBar.GONE);
-                        btnExtractAudio.setEnabled(true);
-                        showErrorDialog("失败", "无法保存");
-                    });
-                }
+                String fileName = "audio_" + timestamp + ".m4a";
+                saveToPublicMusic(tempFile, fileName, "audio/mp4");
+                
+                writeLog("✅ 已保存到 Music 目录");
+                tempFile.delete();
+                
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    btnExtractAudio.setEnabled(true);
+                    showSuccessDialog("已保存到 Music 目录/" + fileName);
+                });
                 cleanup();
             }
 
@@ -246,34 +240,36 @@ public class MainActivity extends AppCompatActivity {
         return path;
     }
 
-    private File copyToPublicDir(File srcFile, String extension) {
+    private void saveToPublicMusic(File sourceFile, String fileName, String mimeType) {
         try {
-            File publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
-            if (!publicDir.exists()) publicDir.mkdirs();
-            String fileName = "audio_" + System.currentTimeMillis() + extension;
-            File destFile = new File(publicDir, fileName);
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Audio.Media.DISPLAY_NAME, fileName);
+            values.put(MediaStore.Audio.Media.MIME_TYPE, mimeType);
             
-            try (FileInputStream in = new FileInputStream(srcFile);
-                 FileOutputStream out = new FileOutputStream(destFile)) {
-                byte[] buffer = new byte[4096];
-                int len;
-                while ((len = in.read(buffer)) != -1) out.write(buffer, 0, len);
-                out.flush();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC);
             }
-            writeLog("✓ 已复制:" + destFile.length() + "B");
-            return destFile;
-        } catch (Exception e) {
-            writeLog("✗ 复制失败:" + e.getMessage());
-            return null;
-        }
-    }
 
-    private void scanMediaFile(File file) {
-        try {
-            Intent scanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
-            scanIntent.setData(Uri.fromFile(file));
-            sendBroadcast(scanIntent);
-        } catch (Exception ignore) {}
+            Uri collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+            Uri itemUri = getContentResolver().insert(collection, values);
+
+            if (itemUri != null) {
+                try (OutputStream out = getContentResolver().openOutputStream(itemUri);
+                     FileInputStream in = new FileInputStream(sourceFile)) {
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = in.read(buffer)) > 0) {
+                        out.write(buffer, 0, len);
+                    }
+                }
+                writeLog("✓ 已保存到 Music: " + fileName);
+            } else {
+                writeLog("✗ 无法创建 Music 文件");
+            }
+        } catch (Exception e) {
+            writeLog("✗ 保存失败：" + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     private void cleanup() {

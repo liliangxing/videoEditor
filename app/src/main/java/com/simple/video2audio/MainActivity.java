@@ -89,12 +89,14 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean checkStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+ 使用 MANAGE_EXTERNAL_STORAGE
             if (!Environment.isExternalStorageManager()) {
                 requestManageStoragePermission();
                 return false;
             }
             return true;
         } else {
+            // Android 10 及以下使用 WRITE_EXTERNAL_STORAGE
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
                     != PackageManager.PERMISSION_GRANTED) {
                 requestPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
@@ -106,12 +108,24 @@ public class MainActivity extends AppCompatActivity {
 
     private void requestManageStoragePermission() {
         try {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
-            intent.setData(Uri.parse("package:" + getPackageName()));
-            startActivity(intent);
+            AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("需要权限")
+                .setMessage("Android 11+ 需要「所有文件访问权限」才能正常工作。\n\n请在设置页面打开「允许管理所有文件」开关。")
+                .setPositiveButton("去设置", (d, w) -> {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                    intent.setData(Uri.parse("package:" + getPackageName()));
+                    startActivity(intent);
+                })
+                .setNegativeButton("取消", (d, w) -> {
+                    Toast.makeText(MainActivity.this, "未授权将无法选择视频文件", Toast.LENGTH_SHORT).show();
+                })
+                .setCancelable(false)
+                .show();
+            writeLog("请求 MANAGE_EXTERNAL_STORAGE 权限");
         } catch (Exception e) {
             e.printStackTrace();
             writeLog("请求权限失败：" + e.getMessage());
+            showErrorDialog("错误", "无法打开权限设置：" + e.getMessage());
         }
     }
 

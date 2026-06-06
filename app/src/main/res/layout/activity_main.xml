@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/mainlayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -13,20 +12,15 @@
         android:orientation="vertical"
         android:padding="16dp">
         
-        <androidx.cardview.widget.CardView
+        <!-- VideoView - 直接用固定高度，不用 CardView 包裹 -->
+        <VideoView
+            android:id="@+id/videoView"
             android:layout_width="match_parent"
-            android:layout_height="220dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="4dp"
-            android:layout_marginBottom="16dp">
-            
-            <VideoView
-                android:id="@+id/videoView"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="#000000"/>
-        </androidx.cardview.widget.CardView>
+            android:layout_height="300dp"
+            android:layout_marginBottom="16dp"
+            android:background="#000000"/>
         
+        <!-- 时间显示 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -62,6 +56,7 @@
                 android:textColor="#666666"/>
         </LinearLayout>
         
+        <!-- 剪切时间显示 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -88,6 +83,7 @@
                 android:textColor="#333333"/>
         </LinearLayout>
         
+        <!-- 提示文字 -->
         <TextView
             android:id="@+id/tvInstructions"
             android:layout_width="match_parent"
@@ -98,69 +94,45 @@
             android:textSize="14sp"
             android:layout_marginBottom="16dp"/>
         
-        <androidx.cardview.widget.CardView
+        <!-- 选择视频按钮 -->
+        <Button
+            android:id="@+id/uploadVideo"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:cardCornerRadius="8dp"
-            app:cardElevation="2dp"
-            android:layout_marginBottom="16dp">
-            
-            <TextView
-                android:id="@+id/uploadVideo"
-                android:layout_width="match_parent"
-                android:layout_height="50dp"
-                android:gravity="center"
-                android:text="📁 选择视频"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"
-                android:background="@drawable/upload_video_selector"/>
-        </androidx.cardview.widget.CardView>
+            android:layout_height="50dp"
+            android:text="📁 选择视频"
+            android:textSize="16sp"
+            android:textAllCaps="false"
+            android:layout_marginBottom="16dp"/>
         
+        <!-- 功能按钮 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:layout_marginBottom="16dp">
             
-            <androidx.cardview.widget.CardView
+            <Button
+                android:id="@+id/cutVideo"
                 android:layout_width="0dp"
                 android:layout_height="60dp"
                 android:layout_weight="1"
-                app:cardCornerRadius="8dp"
-                app:cardElevation="2dp"
-                android:layout_marginEnd="8dp">
-                
-                <TextView
-                    android:id="@+id/cutVideo"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:gravity="center"
-                    android:text="✂️ 切割视频"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp"
-                    android:background="@drawable/cut_video_selector"/>
-            </androidx.cardview.widget.CardView>
+                android:layout_marginEnd="8dp"
+                android:text="✂️ 切割视频"
+                android:textSize="15sp"
+                android:textAllCaps="false"/>
             
-            <androidx.cardview.widget.CardView
+            <Button
+                android:id="@+id/extractAudio"
                 android:layout_width="0dp"
                 android:layout_height="60dp"
                 android:layout_weight="1"
-                app:cardCornerRadius="8dp"
-                app:cardElevation="2dp"
-                android:layout_marginStart="8dp">
-                
-                <TextView
-                    android:id="@+id/extractAudio"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:gravity="center"
-                    android:text="🎵 提取音频"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp"
-                    android:background="@drawable/extract_audio_selector"/>
-            </androidx.cardview.widget.CardView>
+                android:layout_marginStart="8dp"
+                android:text="🎵 提取音频"
+                android:textSize="15sp"
+                android:textAllCaps="false"/>
         </LinearLayout>
         
+        <!-- 设置起点终点按钮 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -173,8 +145,7 @@
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
                 android:text="设为起点"
-                android:textAllCaps="false"
-                style="@style/Widget.Material3.Button"/>
+                android:textAllCaps="false"/>
             
             <Button
                 android:id="@+id/btnSetEndPoint"
@@ -183,8 +154,7 @@
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
                 android:text="设为终点"
-                android:textAllCaps="false"
-                style="@style/Widget.Material3.Button"/>
+                android:textAllCaps="false"/>
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

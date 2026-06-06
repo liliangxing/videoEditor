@@ -1,58 +1,91 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mainlayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
-    android:background="#F5F5F5">
-
-    <ImageView
-        android:layout_width="120dp"
-        android:layout_height="120dp"
-        android:src="@drawable/ic_video"
-        android:contentDescription="Video Icon"/>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="视频转音频"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        android:textColor="#333333"
-        android:layout_marginTop="24dp"/>
-
-    <ProgressBar
-        android:id="@+id/progressBar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:visibility="gone"/>
-
-    <TextView
-        android:id="@+id/txtStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="加载中..."
-        android:textSize="16sp"
-        android:textColor="#666666"
-        android:layout_marginTop="16dp"/>
-
-    <Button
-        android:id="@+id/btnSelectVideo"
+    android:fillViewport="true">
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="📁 选择视频"
-        android:textSize="18sp"
-        android:layout_marginTop="40dp"
-        android:backgroundTint="#2196F3"/>
-
-    <Button
-        android:id="@+id/btnExtractAudio"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="🎵 提取音频 (AAC)"
-        android:textSize="18sp"
-        android:layout_marginTop="16dp"
-        android:backgroundTint="#4CAF50"/>
-
-</LinearLayout>
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+        <VideoView
+            android:id="@+id/videoView"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:layout_margin="20dp"/>
+        <SeekBar
+            android:id="@+id/seekBarProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="20dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_margin="20dp">
+            <TextView
+                android:id="@+id/tvLeft"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="#000000"
+                android:text="00:00:00"/>
+            <TextView
+                android:id="@+id/tvRight"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="right"
+                android:textColor="#000000"
+                android:text="00:00:00"/>
+        </LinearLayout>
+        <TextView
+            android:id="@+id/tvInstructions"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_margin="10dp"
+            android:gravity="center"
+            android:text="拖动进度条选择视频片段\n切割只保留选中部分，音频提取整段"
+            android:textColor="#000000"/>
+        <TextView
+            android:id="@+id/uploadVideo"
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/upload_video_selector"
+            android:gravity="center"
+            android:padding="10dp"
+            android:text="📁 选择视频"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_margin="20dp">
+            <TextView
+                android:id="@+id/cutVideo"
+                android:layout_width="0dp"
+                android:layout_height="60dp"
+                android:layout_weight="1"
+                android:background="@drawable/cut_video_selector"
+                android:gravity="center"
+                android:text="✂️ 切割视频"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"/>
+            <TextView
+                android:id="@+id/extractAudio"
+                android:layout_width="0dp"
+                android:layout_height="60dp"
+                android:layout_weight="1"
+                android:layout_marginLeft="10dp"
+                android:background="@drawable/extract_audio_selector"
+                android:gravity="center"
+                android:text="🎵 提取音频"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"/>
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

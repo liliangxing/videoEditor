@@ -217,26 +217,27 @@ public class MainActivity extends AppCompatActivity {
         btnExtractAudioM4A.setEnabled(false);
         btnExtractAudioMP3.setEnabled(false);
 
-        File outDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
-        if (!outDir.exists()) outDir.mkdirs();
-        File out = new File(outDir, "audio_" + System.currentTimeMillis() + ".m4a");
-        String srcPath = tempVideoFile.getAbsolutePath().replace(" ", "\\ ");
-        String dstPath = out.getAbsolutePath().replace(" ", "\\ ");
-        writeLog("dst:" + dstPath);
+        // 先输出到应用私有目录（FFmpeg 有访问权限）
+        File tempOutDir = new File(getCacheDir(), "audio_temp");
+        if (!tempOutDir.exists()) tempOutDir.mkdirs();
+        File tempOut = new File(tempOutDir, "audio_" + System.currentTimeMillis() + ".m4a");
+        String srcPath = tempVideoFile.getAbsolutePath();
+        String tempDstPath = tempOut.getAbsolutePath();
+        writeLog("temp_dst:" + tempDstPath);
 
-        String[] cmd = {"-y", "-i", srcPath, "-vn", "-c:a", "aac", "-b:a", "192k", dstPath};
+        String[] cmd = {"-y", "-i", srcPath, "-vn", "-c:a", "aac", "-b:a", "192k", tempDstPath};
         writeLog("cmd:" + String.join(" ", cmd));
 
         try {
             ffmpeg.execute(cmd, new ExecuteBinaryResponseHandler() {
                 @Override public void onSuccess(String s) {
-                    writeLog("✓M4A OK:" + out + " " + out.length() + "B");
-                    progressBar.setVisibility(ProgressBar.GONE);
-                    btnExtractAudioM4A.setEnabled(true);
-                    btnExtractAudioMP3.setEnabled(true);
-                    if (tempVideoFile.exists()) tempVideoFile.delete();
-                    scanMediaFile(out);
-                    showSuccessDialog(out.getAbsolutePath());
+                    writeLog("✓M4A encoding OK, size:" + tempOut.length() + "B");
+                    // 转换成功后复制到公共目录
+                    if (copyToPublicDir(tempOut, ".m4a")) {
+                        runOnUiThread(() -> showSuccess("M4A 提取成功", tempOut));
+                    } else {
+                        runOnUiThread(() -> showErrorDialog("失败", "无法保存到 Music 目录"));
+                    }
                 }
                 @Override public void onFailure(String s) {
                     writeLog("✗M4A fail:" + s);
@@ -272,26 +273,28 @@ public class MainActivity extends AppCompatActivity {
         btnExtractAudioM4A.setEnabled(false);
         btnExtractAudioMP3.setEnabled(false);
 
-        File outDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
-        if (!outDir.exists()) outDir.mkdirs();
-        File out = new File(outDir, "audio_" + System.currentTimeMillis() + ".mp3");
-        String srcPath = tempVideoFile.getAbsolutePath().replace(" ", "\\ ");
-        String dstPath = out.getAbsolutePath().replace(" ", "\\ ");
-        writeLog("dst:" + dstPath);
+        // 先输出到应用私有目录（FFmpeg 有访问权限）
+        File tempOutDir = new File(getCacheDir(), "audio_temp");
+        if (!tempOutDir.exists()) tempOutDir.mkdirs();
+        File tempOut = new File(tempOutDir, "audio_" + System.currentTimeMillis() + ".mp3");
+        String srcPath = tempVideoFile.getAbsolutePath();
+        String tempDstPath = tempOut.getAbsolutePath();
+        writeLog("temp_dst:" + tempDstPath);
 
-        String[] cmd = {"-y", "-i", srcPath, "-vn", "-ar", "44100", "-ac", "2", "-acodec", "libmp3lame", "-b:a", "192k", dstPath};
+        // 使用 libmp3lame 编码器并指定 mp3 格式
+        String[] cmd = {"-y", "-i", srcPath, "-vn", "-ar", "44100", "-ac", "2", "-c:a", "libmp3lame", "-b:a", "192k", "-f", "mp3", tempDstPath};
         writeLog("cmd:" + String.join(" ", cmd));
 
         try {
             ffmpeg.execute(cmd, new ExecuteBinaryResponseHandler() {
                 @Override public void onSuccess(String s) {
-                    writeLog("✓MP3 OK:" + out + " " + out.length() + "B");
-                    progressBar.setVisibility(ProgressBar.GONE);
-                    btnExtractAudioM4A.setEnabled(true);
-                    btnExtractAudioMP3.setEnabled(true);
-                    if (tempVideoFile.exists()) tempVideoFile.delete();
-                    scanMediaFile(out);
-                    showSuccessDialog(out.getAbsolutePath());
+                    writeLog("✓MP3 encoding OK, size:" + tempOut.length() + "B");
+                    // 转换成功后复制到公共目录
+                    if (copyToPublicDir(tempOut, ".mp3")) {
+                        runOnUiThread(() -> showSuccess("MP3 提取成功", tempOut));
+                    } else {
+                        runOnUiThread(() -> showErrorDialog("失败", "无法保存到 Music 目录"));
+                    }
                 }
                 @Override public void onFailure(String s) {
                     writeLog("✗MP3 fail:" + s);
@@ -312,6 +315,66 @@ public class MainActivity extends AppCompatActivity {
             btnExtractAudioMP3.setEnabled(true);
             showErrorDialog("错误", "执行中");
         }
+    }
+
+    private boolean copyToPublicDir(File srcFile, String extension) {
+        try {
+            // 使用 MediaStore 写入公共目录（兼容 Android 10+）
+            File publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
+            if (!publicDir.exists()) publicDir.mkdirs();
+            
+            String fileName = "audio_" + System.currentTimeMillis() + extension;
+            File destFile = new File(publicDir, fileName);
+            
+            // 直接复制文件（MANAGE_EXTERNAL_STORAGE 权限下可用）
+            try (java.io.FileInputStream in = new java.io.FileInputStream(srcFile);
+                 java.io.FileOutputStream out = new java.io.FileOutputStream(destFile)) {
+                byte[] buffer = new byte[4096];
+                int len;
+                while ((len = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, len);
+                }
+                out.flush();
+            }
+            
+            writeLog("✓Copied to public dir: " + destFile.getAbsolutePath() + " (" + destFile.length() + "B)");
+            
+            // 刷新媒体库
+            scanMediaFile(destFile);
+            
+            // 删除临时文件
+            if (tempVideoFile != null && tempVideoFile.exists()) tempVideoFile.delete();
+            if (srcFile.exists()) srcFile.delete();
+            
+            progressBar.setVisibility(ProgressBar.GONE);
+            btnExtractAudioM4A.setEnabled(true);
+            btnExtractAudioMP3.setEnabled(true);
+            
+            return true;
+        } catch (Exception e) {
+            writeLog("✗Copy to public dir failed: " + e.getMessage());
+            e.printStackTrace();
+            progressBar.setVisibility(ProgressBar.GONE);
+            btnExtractAudioM4A.setEnabled(true);
+            btnExtractAudioMP3.setEnabled(true);
+            return false;
+        }
+    }
+
+    private void showSuccess(String title, File tempFile) {
+        progressBar.setVisibility(ProgressBar.GONE);
+        btnExtractAudioM4A.setEnabled(true);
+        btnExtractAudioMP3.setEnabled(true);
+        
+        File publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
+        String[] files = publicDir.list((d, name) -> name.endsWith(".mp3") || name.endsWith(".m4a"));
+        String latestFile = "";
+        if (files != null && files.length > 0) {
+            java.util.Arrays.sort(files);
+            latestFile = new File(publicDir, files[files.length - 1]).getAbsolutePath();
+        }
+        
+        showSuccessDialog(latestFile.isEmpty() ? tempFile.getAbsolutePath() : latestFile);
     }
 
     private void scanMediaFile(File file) {

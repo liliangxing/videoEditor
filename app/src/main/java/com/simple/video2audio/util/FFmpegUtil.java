@@ -18,6 +18,9 @@ public class FFmpegUtil {
             ReturnCode returnCode = completedSession.getReturnCode();
             String allLogs = completedSession.getAllLogsAsString();
 
+            Log.d("FFmpeg", "ReturnCode: " + returnCode);
+            Log.d("FFmpeg", "AllLogs: " + allLogs);
+
             if (ReturnCode.isSuccess(returnCode)) {
                 callback.onSuccess(allLogs);
             } else {

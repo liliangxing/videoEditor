@@ -19,10 +19,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
-import com.github.hiteshsondhi88.libffmpeg.ExecuteBinaryResponseHandler;
-import com.github.hiteshsondhi88.libffmpeg.FFmpeg;
-import com.github.hiteshsondhi88.libffmpeg.LoadBinaryResponseHandler;
-import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegCommandAlreadyRunningException;
+import com.simple.video2audio.util.FFmpegUtil;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -40,7 +37,6 @@ public class MainActivity extends AppCompatActivity {
     private Button btnSelectVideo, btnExtractAudio;
     private ProgressBar progressBar;
     private TextView txtStatus;
-    private FFmpeg ffmpeg;
     private Uri selectedVideoUri = null;
     private File tempVideoFile = null;
     private File logFile;
@@ -84,7 +80,7 @@ public class MainActivity extends AppCompatActivity {
         initLogFile();
         initViews();
         setupListeners();
-        loadFFmpeg();
+        writeLog("✓ FFmpegKit 已初始化");
     }
 
     private boolean checkStoragePermission() {
@@ -169,28 +165,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void loadFFmpeg() {
-        progressBar.setVisibility(ProgressBar.VISIBLE);
-        try {
-            ffmpeg = FFmpeg.getInstance(this);
-            ffmpeg.loadBinary(new LoadBinaryResponseHandler() {
-                @Override public void onSuccess() {
-                    progressBar.setVisibility(ProgressBar.GONE);
-                    txtStatus.setText("就绪");
-                    writeLog("✓ FFmpeg 加载成功");
-                }
-                @Override public void onFailure() {
-                    progressBar.setVisibility(ProgressBar.GONE);
-                    writeLog("✗ FFmpeg 加载失败");
-                    showErrorDialog("不支持", "设备不支持 FFmpeg");
-                }
-            });
-        } catch (Exception e) {
-            progressBar.setVisibility(ProgressBar.GONE);
-            writeLog("✗ FFmpeg 错误:" + e.getMessage());
-        }
-    }
-
     private void extractAudioAAC() {
         if (!checkStoragePermission()) return;
         if (tempVideoFile == null || !tempVideoFile.exists()) {
@@ -209,83 +183,62 @@ public class MainActivity extends AppCompatActivity {
         File outputFile = new File(outputDir, "audio_" + System.currentTimeMillis() + ".m4a");
         
         String srcPath = tempVideoFile.getAbsolutePath();
-        String[] cmd = {
-            "-y",
-            "-i", srcPath,
-            "-vn",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-ar", "44100",
-            "-ac", "2",
-            outputFile.getAbsolutePath()
-        };
+        String cmd = String.format("-y -i %s -vn -c:a aac -b:a 192k -ar 44100 -ac 2 %s",
+                quotePath(srcPath), quotePath(outputFile.getAbsolutePath()));
         
-        String cmdStr = String.join(" ", cmd);
-        writeLog("FFmpeg 命令：" + cmdStr);
+        writeLog("FFmpeg 命令：" + cmd);
 
-        try {
-            final long startTime = System.currentTimeMillis();
-            ffmpeg.execute(cmd, new ExecuteBinaryResponseHandler() {
-                @Override
-                public void onSuccess(String message) {
-                    long duration = System.currentTimeMillis() - startTime;
-                    writeLog("✅ 转换成功，耗时:" + duration + "ms, 大小:" + outputFile.length() + "B");
-                    Log.d("FFMPEG_RAW", "完整日志:\n" + message);
-                    
-                    File publicFile = copyToPublicDir(outputFile, ".m4a");
-                    if (publicFile != null) {
-                        scanMediaFile(publicFile);
-                        writeLog("✅ 已保存:" + publicFile.getAbsolutePath());
-                        runOnUiThread(() -> {
-                            progressBar.setVisibility(ProgressBar.GONE);
-                            btnExtractAudio.setEnabled(true);
-                            showSuccessDialog(publicFile.getAbsolutePath());
-                        });
-                    } else {
-                        runOnUiThread(() -> {
-                            progressBar.setVisibility(ProgressBar.GONE);
-                            btnExtractAudio.setEnabled(true);
-                            showErrorDialog("失败", "无法保存");
-                        });
-                    }
-                    cleanup();
-                }
-
-                @Override
-                public void onFailure(String message) {
-                    writeLog("❌ 转换失败:" + message);
-                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + message);
-                    Log.e("FFMPEG_ERROR", "转换失败\n" + message);
-                    
+        final long startTime = System.currentTimeMillis();
+        FFmpegUtil.execute(cmd, new FFmpegUtil.ExecuteCallback() {
+            @Override
+            public void onSuccess(String output) {
+                long duration = System.currentTimeMillis() - startTime;
+                writeLog("✅ 转换成功，耗时:" + duration + "ms, 大小:" + outputFile.length() + "B");
+                Log.d("FFMPEG_RAW", "完整日志:\n" + output);
+                
+                File publicFile = copyToPublicDir(outputFile, ".m4a");
+                if (publicFile != null) {
+                    scanMediaFile(publicFile);
+                    writeLog("✅ 已保存:" + publicFile.getAbsolutePath());
                     runOnUiThread(() -> {
                         progressBar.setVisibility(ProgressBar.GONE);
                         btnExtractAudio.setEnabled(true);
-                        showErrorDialog("FFmpeg 失败", message);
+                        showSuccessDialog(publicFile.getAbsolutePath());
                     });
-                    
-                    if (tempVideoFile != null && tempVideoFile.exists()) tempVideoFile.delete();
+                } else {
+                    runOnUiThread(() -> {
+                        progressBar.setVisibility(ProgressBar.GONE);
+                        btnExtractAudio.setEnabled(true);
+                        showErrorDialog("失败", "无法保存");
+                    });
                 }
+                cleanup();
+            }
 
-                @Override public void onProgress(String message) {
-                    writeLog("📝 输出:" + message);
-                    txtStatus.setText("处理中...");
-                }
+            @Override
+            public void onFailure(String error) {
+                long duration = System.currentTimeMillis() - startTime;
+                writeLog("❌ 转换失败，耗时:" + duration + "ms");
+                writeLog("错误详情:" + error);
+                Log.d("FFMPEG_RAW", "完整原始日志:\n" + error);
+                Log.e("FFMPEG_ERROR", "转换失败\n" + error);
+                
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    btnExtractAudio.setEnabled(true);
+                    showErrorDialog("FFmpeg 失败", error);
+                });
+                
+                if (tempVideoFile != null && tempVideoFile.exists()) tempVideoFile.delete();
+            }
+        });
+    }
 
-                @Override public void onStart() {
-                    writeLog("▶️ 开始执行");
-                    txtStatus.setText("提取中...");
-                }
-
-                @Override public void onFinish() {
-                    writeLog("⏹️ 执行结束");
-                }
-            });
-        } catch (FFmpegCommandAlreadyRunningException e) {
-            writeLog("✗ FFmpeg 正在运行");
-            progressBar.setVisibility(ProgressBar.GONE);
-            btnExtractAudio.setEnabled(true);
-            showErrorDialog("错误", "上一个任务未完成");
+    private String quotePath(String path) {
+        if (path.contains(" ")) {
+            return "\"" + path + "\"";
         }
+        return path;
     }
 
     private File copyToPublicDir(File srcFile, String extension) {

@@ -1,91 +1,190 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/mainlayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:fillViewport="true"
+    android:background="#f5f5f5">
+    
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
-        <VideoView
-            android:id="@+id/videoView"
+        android:orientation="vertical"
+        android:padding="16dp">
+        
+        <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
-            android:layout_height="200dp"
-            android:layout_margin="20dp"/>
-        <SeekBar
-            android:id="@+id/seekBarProgress"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_margin="20dp"/>
+            android:layout_height="220dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            android:layout_marginBottom="16dp">
+            
+            <VideoView
+                android:id="@+id/videoView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#000000"/>
+        </androidx.cardview.widget.CardView>
+        
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_margin="20dp">
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+            
             <TextView
                 android:id="@+id/tvLeft"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:textColor="#000000"
-                android:text="00:00:00"/>
+                android:text="00:00:00"
+                android:textSize="14sp"
+                android:textColor="#666666"/>
+            
+            <SeekBar
+                android:id="@+id/seekBarProgress"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"/>
+            
             <TextView
                 android:id="@+id/tvRight"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:gravity="right"
-                android:textColor="#000000"
-                android:text="00:00:00"/>
+                android:gravity="end"
+                android:text="00:00:00"
+                android:textSize="14sp"
+                android:textColor="#666666"/>
         </LinearLayout>
-        <TextView
-            android:id="@+id/tvInstructions"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_margin="10dp"
-            android:gravity="center"
-            android:text="拖动进度条选择视频片段\n切割只保留选中部分，音频提取整段"
-            android:textColor="#000000"/>
-        <TextView
-            android:id="@+id/uploadVideo"
-            android:layout_width="200dp"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_marginTop="10dp"
-            android:background="@drawable/upload_video_selector"
-            android:gravity="center"
-            android:padding="10dp"
-            android:text="📁 选择视频"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"/>
+        
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_margin="20dp">
+            android:layout_marginBottom="16dp">
+            
             <TextView
-                android:id="@+id/cutVideo"
+                android:id="@+id/tvCutStartTime"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="起点：00:00:00"
+                android:textSize="13sp"
+                android:textColor="#333333"/>
+            
+            <TextView
+                android:id="@+id/tvCutEndTime"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:text="终点：00:00:00"
+                android:textSize="13sp"
+                android:textColor="#333333"/>
+        </LinearLayout>
+        
+        <TextView
+            android:id="@+id/tvInstructions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="拖动进度条预览视频\n点击下方按钮设置剪切起点和终点"
+            android:textColor="#666666"
+            android:textSize="14sp"
+            android:layout_marginBottom="16dp"/>
+        
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="8dp"
+            app:cardElevation="2dp"
+            android:layout_marginBottom="16dp">
+            
+            <TextView
+                android:id="@+id/uploadVideo"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:gravity="center"
+                android:text="📁 选择视频"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:background="@drawable/upload_video_selector"/>
+        </androidx.cardview.widget.CardView>
+        
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+            
+            <androidx.cardview.widget.CardView
                 android:layout_width="0dp"
                 android:layout_height="60dp"
                 android:layout_weight="1"
-                android:background="@drawable/cut_video_selector"
-                android:gravity="center"
-                android:text="✂️ 切割视频"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"/>
-            <TextView
-                android:id="@+id/extractAudio"
+                app:cardCornerRadius="8dp"
+                app:cardElevation="2dp"
+                android:layout_marginEnd="8dp">
+                
+                <TextView
+                    android:id="@+id/cutVideo"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:text="✂️ 切割视频"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:background="@drawable/cut_video_selector"/>
+            </androidx.cardview.widget.CardView>
+            
+            <androidx.cardview.widget.CardView
                 android:layout_width="0dp"
                 android:layout_height="60dp"
                 android:layout_weight="1"
-                android:layout_marginLeft="10dp"
-                android:background="@drawable/extract_audio_selector"
-                android:gravity="center"
-                android:text="🎵 提取音频"
-                android:textColor="#FFFFFF"
-                android:textSize="16sp"/>
+                app:cardCornerRadius="8dp"
+                app:cardElevation="2dp"
+                android:layout_marginStart="8dp">
+                
+                <TextView
+                    android:id="@+id/extractAudio"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:text="🎵 提取音频"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:background="@drawable/extract_audio_selector"/>
+            </androidx.cardview.widget.CardView>
+        </LinearLayout>
+        
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            
+            <Button
+                android:id="@+id/btnSetStartPoint"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="设为起点"
+                android:textAllCaps="false"
+                style="@style/Widget.Material3.Button"/>
+            
+            <Button
+                android:id="@+id/btnSetEndPoint"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="设为终点"
+                android:textAllCaps="false"
+                style="@style/Widget.Material3.Button"/>
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

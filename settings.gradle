@@ -10,7 +10,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://github.com/Arthenia/ffmpeg-kit/releases/download/v6.0' }
     }
 }
 rootProject.name = "VideoToAudio"

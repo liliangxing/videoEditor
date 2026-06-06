@@ -208,7 +208,6 @@ public class MainActivity extends AppCompatActivity {
         
         File outputFile = new File(outputDir, "audio_" + System.currentTimeMillis() + ".m4a");
         
-        // ✅ 关键修复：简化命令，移除 -af 滤镜，使用流复制测试
         String srcPath = tempVideoFile.getAbsolutePath();
         String[] cmd = {
             "-y",

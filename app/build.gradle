@@ -10,8 +10,8 @@ android {
         applicationId "com.simple.video2audio"
         minSdk 24
         targetSdk 34
-        versionCode 7
-        versionName "3.8"
+        versionCode 8
+        versionName "3.11"
         
         ndk {
             abiFilters 'arm64-v8a'
@@ -44,14 +44,15 @@ android {
 }
 
 repositories {
-    flatDir {
-        dirs 'libs'
-    }
+    maven { url 'https://maven.aliyun.com/repository/public' }
+    maven { url 'https://maven.aliyun.com/repository/central' }
+    google()
+    mavenCentral()
 }
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation(name: 'ffmpeg-kit-min-gpl-6.0-2', ext: 'aar')
+    implementation 'com.arthenica:ffmpeg-kit-min-gpl:6.0-2'
 }

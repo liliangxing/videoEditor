@@ -83,24 +83,38 @@ public class MainActivity extends AppCompatActivity {
         initLogFile();
         initViews();
         setupListeners();
-        writeLog("✓ FFmpegKit 已初始化");
         
-        // 测试 FFmpegKit 是否能正常执行命令
-        FFmpegUtil.execute("-version", new FFmpegUtil.ExecuteCallback() {
-            @Override
-            public void onSuccess(String output) {
-                Log.w("FFmpegTest", "版本输出成功：\n" + output);
-                writeLog("✅ FFmpegKit 测试成功");
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "FFmpegKit 正常", Toast.LENGTH_LONG).show());
-            }
+        // 使用 try-catch 包裹 FFmpegKit 的初始化
+        try {
+            writeLog("✓ FFmpegKit 初始化中...");
+        } catch (Exception e) {
+            Log.e(TAG, "FFmpegKit 初始化失败", e);
+            writeLog("❌ FFmpegKit 初始化失败：" + e.getMessage());
+        }
+        
+        // 延迟测试 FFmpegKit 是否能正常执行命令
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                FFmpegUtil.execute("-version", new FFmpegUtil.ExecuteCallback() {
+                    @Override
+                    public void onSuccess(String output) {
+                        Log.w("FFmpegTest", "版本输出成功：\n" + output);
+                        writeLog("✅ FFmpegKit 测试成功");
+                        Toast.makeText(MainActivity.this, "FFmpegKit 正常", Toast.LENGTH_LONG).show();
+                    }
 
-            @Override
-            public void onFailure(String error) {
-                Log.e("FFmpegTest", "版本获取失败：" + error);
-                writeLog("❌ FFmpegKit 测试失败：" + error);
-                runOnUiThread(() -> Toast.makeText(MainActivity.this, "FFmpegKit 失败：" + error, Toast.LENGTH_LONG).show());
+                    @Override
+                    public void onFailure(String error) {
+                        Log.e("FFmpegTest", "版本获取失败：" + error);
+                        writeLog("❌ FFmpegKit 测试失败：" + error);
+                        Toast.makeText(MainActivity.this, "FFmpegKit 失败：" + error, Toast.LENGTH_LONG).show();
+                    }
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "FFmpegKit 测试异常", e);
+                writeLog("❌ FFmpegKit 测试异常：" + e.getMessage());
             }
-        });
+        }, 500);
     }
 
     private boolean checkStoragePermission() {

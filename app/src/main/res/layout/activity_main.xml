@@ -2,37 +2,115 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
+    android:padding="16dp"
     android:background="#F5F5F5">
 
-    <ImageView
-        android:id="@+id/imageView"
-        android:layout_width="120dp"
-        android:layout_height="120dp"
-        android:src="@drawable/ic_video"
-        android:contentDescription="Video Icon"/>
+    <FrameLayout
+        android:id="@+id/videoContainer"
+        android:layout_width="match_parent"
+        android:layout_height="300dp"
+        android:background="#000000">
 
-    <TextView
-        android:layout_width="wrap_content"
+        <SurfaceView
+            android:id="@+id/surfaceView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <ImageView
+            android:id="@+id/videoPreviewImg"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_video"
+            android:visibility="visible"/>
+    </FrameLayout>
+
+    <SeekBar
+        android:id="@+id/seekBar"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="视频转音频"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        android:textColor="#333333"
-        android:layout_marginTop="24dp"/>
+        android:layout_marginTop="8dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:id="@+id/txtStartTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="00:00"
+            android:textSize="14sp"
+            android:textColor="#666666"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" / "
+            android:textSize="14sp"
+            android:textColor="#999999"/>
+
+        <TextView
+            android:id="@+id/txtEndTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="00:00"
+            android:textSize="14sp"
+            android:textColor="#666666"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+
+        <Button
+            android:id="@+id/btnPlay"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="▶ 播放"
+            android:textSize="14sp"
+            android:backgroundTint="#2196F3"/>
+
+        <Button
+            android:id="@+id/btnSetStart"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="⏱ 设起点"
+            android:textSize="14sp"
+            android:backgroundTint="#FF9800"/>
+
+        <Button
+            android:id="@+id/btnSetEnd"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="⏱ 设终点"
+            android:textSize="14sp"
+            android:backgroundTint="#FF9800"/>
+    </LinearLayout>
 
     <ProgressBar
         android:id="@+id/progressBar"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:visibility="gone"/>
+        android:layout_gravity="center"
+        android:visibility="gone"
+        android:layout_marginTop="16dp"/>
 
     <TextView
         android:id="@+id/txtStatus"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="加载中..."
+        android:text="未选择视频"
         android:textSize="16sp"
         android:textColor="#666666"
         android:layout_marginTop="16dp"/>
@@ -43,8 +121,18 @@
         android:layout_height="56dp"
         android:text="📁 选择视频"
         android:textSize="18sp"
-        android:layout_marginTop="40dp"
+        android:layout_marginTop="16dp"
         android:backgroundTint="#2196F3"/>
+
+    <Button
+        android:id="@+id/btnCutVideo"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="✂ 切割视频"
+        android:textSize="18sp"
+        android:layout_marginTop="16dp"
+        android:backgroundTint="#9C27B0"
+        android:enabled="false"/>
 
     <Button
         android:id="@+id/btnExtractAudio"
@@ -53,7 +141,8 @@
         android:text="🎵 提取 AAC"
         android:textSize="18sp"
         android:layout_marginTop="16dp"
-        android:backgroundTint="#4CAF50"/>
+        android:backgroundTint="#4CAF50"
+        android:enabled="false"/>
 
     <Button
         android:id="@+id/btnExtractMP3"
@@ -62,6 +151,7 @@
         android:text="🎤 提取 MP3"
         android:textSize="18sp"
         android:layout_marginTop="16dp"
-        android:backgroundTint="#FF9800"/>
+        android:backgroundTint="#FF9800"
+        android:enabled="false"/>
 
 </LinearLayout>

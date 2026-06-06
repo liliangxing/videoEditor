@@ -60,45 +60,6 @@ public class MainActivity extends AppCompatActivity {
     private int cutStartMs = 0;
     private int cutEndMs = 0;
     private int videoDurationMs = 0;
-    
-    private final ActivityResultLauncher<String> requestPermissionLauncher =
-            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) pickVideo();
-                else showErrorDialog("需要权限", "请授权存储权限");
-            });
-    
-    private final ActivityResultLauncher<String> videoPickerLauncher =
-            registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
-                if (uri != null) {
-                    writeLog("视频已选择：" + uri);
-                    new Thread(() -> {
-                        try {
-                            tempVideoFile = copyToCache(uri);
-                            if (tempVideoFile != null && tempVideoFile.exists()) {
-                                writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B");
-                                currentVideoPath = tempVideoFile.getAbsolutePath();
-                                runOnUiThread(() -> {
-                                    txtStatus.setText("已加载:" + (tempVideoFile.length()/1024/1024) + "MB");
-                                    videoPreviewImg.setVisibility(View.VISIBLE);
-                                    btnPlay.setEnabled(true);
-                                    btnCutVideo.setEnabled(true);
-                                    btnExtractAudio.setEnabled(true);
-                                    btnExtractMP3.setEnabled(true);
-                                    videoPlayerManager.loadVideo(currentVideoPath);
-                                });
-                            } else {
-                                runOnUiThread(() -> {
-                                    txtStatus.setText("缓存失败");
-                                    showErrorDialog("错误", "无法缓存视频文件");
-                                });
-                            }
-                        } catch (Exception e) {
-                            writeLog("❌ 异常:" + e.getMessage());
-                            runOnUiThread(() -> showErrorDialog("错误", e.getMessage()));
-                        }
-                    }).start();
-                }
-            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -164,48 +125,66 @@ public class MainActivity extends AppCompatActivity {
         btnExtractAudio.setEnabled(false);
         btnExtractMP3.setEnabled(false);
         
-        videoPlayerManager = new VideoPlayerManager(this, surfaceView, videoPreviewImg, new VideoPlayerManager.OnPlaybackListener() {
+        surfaceView.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override
-            public void onPrepared(int duration) {
-                runOnUiThread(() -> {
-                    videoDurationMs = duration;
-                    cutEndMs = duration;
-                    seekBar.setMax(duration);
-                    updateTimeText(0, duration);
-                    btnPlay.setText("⏸ 暂停");
-                });
+            public void surfaceCreated(SurfaceHolder holder) {
+                if (videoPlayerManager == null) {
+                    videoPlayerManager = new VideoPlayerManager(MainActivity.this, surfaceView, videoPreviewImg, new VideoPlayerManager.OnPlaybackListener() {
+                        @Override
+                        public void onPrepared(int duration) {
+                            runOnUiThread(() -> {
+                                videoDurationMs = duration;
+                                cutEndMs = duration;
+                                seekBar.setMax(duration);
+                                updateTimeText(0, duration);
+                                btnPlay.setText("⏸ 暂停");
+                            });
+                        }
+
+                        @Override
+                        public void onProgressUpdate(int currentPosition, int duration) {
+                            runOnUiThread(() -> {
+                                seekBar.setProgress(currentPosition);
+                                updateTimeText(currentPosition, duration);
+                            });
+                        }
+
+                        @Override
+                        public void onCompletion() {
+                            runOnUiThread(() -> {
+                                seekBar.setProgress(0);
+                                btnPlay.setText("▶ 播放");
+                                Toast.makeText(MainActivity.this, "播放完成", Toast.LENGTH_SHORT).show();
+                            });
+                        }
+
+                        @Override
+                        public void onError(String error) {
+                            runOnUiThread(() -> {
+                                Toast.makeText(MainActivity.this, "播放错误：" + error, Toast.LENGTH_LONG).show();
+                                Log.e("VideoEditor", error);
+                            });
+                        }
+                    });
+                    writeLog("VideoPlayerManager 已初始化");
+                    
+                    if (currentVideoPath != null) {
+                        videoPlayerManager.loadVideo(currentVideoPath);
+                    }
+                }
             }
 
             @Override
-            public void onProgressUpdate(int currentPosition, int duration) {
-                runOnUiThread(() -> {
-                    seekBar.setProgress(currentPosition);
-                    updateTimeText(currentPosition, duration);
-                });
-            }
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
 
             @Override
-            public void onCompletion() {
-                runOnUiThread(() -> {
-                    seekBar.setProgress(0);
-                    btnPlay.setText("▶ 播放");
-                    Toast.makeText(MainActivity.this, "播放完成", Toast.LENGTH_SHORT).show();
-                });
-            }
-
-            @Override
-            public void onError(String error) {
-                runOnUiThread(() -> {
-                    Toast.makeText(MainActivity.this, "播放错误：" + error, Toast.LENGTH_LONG).show();
-                    Log.e("VideoEditor", error);
-                });
-            }
+            public void surfaceDestroyed(SurfaceHolder holder) {}
         });
         
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser && videoPlayerManager.isPrepared()) {
+                if (fromUser && videoPlayerManager != null && videoPlayerManager.isPrepared()) {
                     videoPlayerManager.seekTo(progress);
                     updateTimeText(progress, videoDurationMs);
                 }
@@ -273,9 +252,45 @@ public class MainActivity extends AppCompatActivity {
         btnExtractMP3.setOnClickListener(v -> extractAudio("mp3", "audio/mpeg", "MP3"));
     }
 
-    private void pickVideo() {
-        videoPickerLauncher.launch("video/*");
-    }
+    private final ActivityResultLauncher<String> requestPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
+                if (isGranted) pickVideo();
+                else showErrorDialog("需要权限", "请授权存储权限");
+            });
+    
+    private final ActivityResultLauncher<String> videoPickerLauncher =
+            registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
+                if (uri != null) {
+                    writeLog("视频已选择：" + uri);
+                    new Thread(() -> {
+                        try {
+                            tempVideoFile = copyToCache(uri);
+                            if (tempVideoFile != null && tempVideoFile.exists()) {
+                                writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B");
+                                currentVideoPath = tempVideoFile.getAbsolutePath();
+                                runOnUiThread(() -> {
+                                    txtStatus.setText("已加载:" + (tempVideoFile.length()/1024/1024) + "MB");
+                                    videoPreviewImg.setVisibility(View.VISIBLE);
+                                    btnCutVideo.setEnabled(true);
+                                    btnExtractAudio.setEnabled(true);
+                                    btnExtractMP3.setEnabled(true);
+                                    if (videoPlayerManager != null) {
+                                        videoPlayerManager.loadVideo(currentVideoPath);
+                                    }
+                                });
+                            } else {
+                                runOnUiThread(() -> {
+                                    txtStatus.setText("缓存失败");
+                                    showErrorDialog("错误", "无法缓存视频文件");
+                                });
+                            }
+                        } catch (Exception e) {
+                            writeLog("❌ 异常:" + e.getMessage());
+                            runOnUiThread(() -> showErrorDialog("错误", e.getMessage()));
+                        }
+                    }).start();
+                }
+            });
 
     private File copyToCache(Uri uri) throws Exception {
         File f = File.createTempFile("video_", ".mp4", getCacheDir());
@@ -447,10 +462,14 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void pickVideo() {
+        videoPickerLauncher.launch("video/*");
+    }
+
     private void enableButtons(boolean enabled) {
-        btnPlay.setEnabled(enabled);
-        btnSetStart.setEnabled(enabled);
-        btnSetEnd.setEnabled(enabled);
+        btnPlay.setEnabled(enabled && videoPlayerManager != null);
+        btnSetStart.setEnabled(enabled && videoPlayerManager != null);
+        btnSetEnd.setEnabled(enabled && videoPlayerManager != null);
         btnCutVideo.setEnabled(enabled && currentVideoPath != null);
         btnExtractAudio.setEnabled(enabled && currentVideoPath != null);
         btnExtractMP3.setEnabled(enabled && currentVideoPath != null);
@@ -564,6 +583,7 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
         if (videoPlayerManager != null) {
             videoPlayerManager.release();
+            videoPlayerManager = null;
         }
         if (tempVideoFile != null && tempVideoFile.exists()) {
             tempVideoFile.delete();

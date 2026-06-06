@@ -1,17 +1,22 @@
 package com.simple.video2audio;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.provider.Settings;
 import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 import com.github.hiteshsondhi88.libffmpeg.ExecuteBinaryResponseHandler;
 import com.github.hiteshsondhi88.libffmpeg.FFmpeg;
@@ -35,6 +40,15 @@ public class MainActivity extends AppCompatActivity {
     private Uri selectedVideoUri = null;
     private File tempVideoFile = null;
     private File logFile;
+
+    private final ActivityResultLauncher<String> requestPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
+                if (isGranted) {
+                    pickVideo();
+                } else {
+                    showErrorDialog("需要权限", "请授权存储权限以选择视频文件");
+                }
+            });
 
     private final ActivityResultLauncher<String> videoPickerLauncher =
             registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
@@ -73,6 +87,34 @@ public class MainActivity extends AppCompatActivity {
         loadFFmpeg();
     }
 
+    private boolean checkStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                requestManageStoragePermission();
+                return false;
+            }
+            return true;
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+                return false;
+            }
+            return true;
+        }
+    }
+
+    private void requestManageStoragePermission() {
+        try {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Exception e) {
+            e.printStackTrace();
+            writeLog("请求权限失败：" + e.getMessage());
+        }
+    }
+
     private void initLogFile() {
         File logDir = new File(Environment.getExternalStorageDirectory(), "douyinguanjia/Log");
         if (!logDir.exists()) logDir.mkdirs();
@@ -102,9 +144,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupListeners() {
-        btnSelectVideo.setOnClickListener(v -> videoPickerLauncher.launch("video/*"));
+        btnSelectVideo.setOnClickListener(v -> {
+            if (checkStoragePermission()) {
+                pickVideo();
+            }
+        });
         btnExtractAudioM4A.setOnClickListener(v -> extractAudioM4A());
         btnExtractAudioMP3.setOnClickListener(v -> extractAudioMP3());
+    }
+
+    private void pickVideo() {
+        videoPickerLauncher.launch("video/*");
     }
 
     private File copyToCache(Uri uri) throws Exception {
@@ -143,6 +193,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void extractAudioM4A() {
+        if (!checkStoragePermission()) return;
         if (tempVideoFile == null || !tempVideoFile.exists()) {
             showErrorDialog("错误", "请先选视频"); return;
         }
@@ -153,6 +204,7 @@ public class MainActivity extends AppCompatActivity {
         btnExtractAudioMP3.setEnabled(false);
 
         File outDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
+        if (!outDir.exists()) outDir.mkdirs();
         File out = new File(outDir, "audio_" + System.currentTimeMillis() + ".m4a");
         String srcPath = tempVideoFile.getAbsolutePath().replace(" ", "\\ ");
         String dstPath = out.getAbsolutePath().replace(" ", "\\ ");
@@ -169,6 +221,7 @@ public class MainActivity extends AppCompatActivity {
                     btnExtractAudioM4A.setEnabled(true);
                     btnExtractAudioMP3.setEnabled(true);
                     if (tempVideoFile.exists()) tempVideoFile.delete();
+                    scanMediaFile(out);
                     showSuccessDialog(out.getAbsolutePath());
                 }
                 @Override public void onFailure(String s) {
@@ -193,6 +246,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void extractAudioMP3() {
+        if (!checkStoragePermission()) return;
         if (tempVideoFile == null || !tempVideoFile.exists()) {
             showErrorDialog("错误", "请先选视频"); return;
         }
@@ -205,6 +259,7 @@ public class MainActivity extends AppCompatActivity {
         btnExtractAudioMP3.setEnabled(false);
 
         File outDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
+        if (!outDir.exists()) outDir.mkdirs();
         File out = new File(outDir, "audio_" + System.currentTimeMillis() + ".mp3");
         String srcPath = tempVideoFile.getAbsolutePath().replace(" ", "\\ ");
         String dstPath = out.getAbsolutePath().replace(" ", "\\ ");
@@ -221,6 +276,7 @@ public class MainActivity extends AppCompatActivity {
                     btnExtractAudioM4A.setEnabled(true);
                     btnExtractAudioMP3.setEnabled(true);
                     if (tempVideoFile.exists()) tempVideoFile.delete();
+                    scanMediaFile(out);
                     showSuccessDialog(out.getAbsolutePath());
                 }
                 @Override public void onFailure(String s) {
@@ -241,6 +297,17 @@ public class MainActivity extends AppCompatActivity {
             btnExtractAudioM4A.setEnabled(true);
             btnExtractAudioMP3.setEnabled(true);
             showErrorDialog("错误", "执行中");
+        }
+    }
+
+    private void scanMediaFile(File file) {
+        try {
+            Intent scanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+            scanIntent.setData(Uri.fromFile(file));
+            sendBroadcast(scanIntent);
+            writeLog("已刷新媒体库：" + file.getName());
+        } catch (Exception e) {
+            writeLog("刷新媒体库失败：" + e.getMessage());
         }
     }
 

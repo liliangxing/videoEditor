@@ -3,7 +3,6 @@ package com.simple.video2audio;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.content.ContentValues;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
@@ -15,18 +14,20 @@ import android.os.Looper;
 import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.Surface;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.widget.Button;
-import android.widget.MediaController;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.VideoView;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import android.content.Intent;
 import com.arthenica.ffmpegkit.FFmpegKit;
 import com.arthenica.ffmpegkit.FFmpegSession;
 import com.arthenica.ffmpegkit.ReturnCode;
@@ -40,15 +41,25 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback, MediaPlayer.OnPreparedListener, 
+        MediaPlayer.OnErrorListener, MediaPlayer.OnCompletionListener {
+    
     private static final String TAG = "VideoToAudio";
     
-    private VideoView videoView;
+    // UI 组件
+    private SurfaceView surfaceView;
+    private SurfaceHolder surfaceHolder;
     private SeekBar seekBar;
     private TextView tvLeft, tvRight, tvCutStartTime, tvCutEndTime, txtStatus;
     private Button btnSelectVideo, btnCutVideo, btnExtractAudio, btnSetStartPoint, btnSetEndPoint;
+    private Button btnPlayPause, btnStop;
     private ProgressBar progressBar;
     
+    // MediaPlayer
+    private MediaPlayer mediaPlayer;
+    private Surface surface;
+    
+    // 文件和数据
     private Uri selectedVideoUri = null;
     private File tempVideoFile = null;
     private File logFile;
@@ -56,7 +67,9 @@ public class MainActivity extends AppCompatActivity {
     private int duration = 0;
     private int cutStartSec = 0;
     private int cutEndSec = 0;
-    private boolean isSeeking = false;
+    private boolean isPlaying = false;
+    private boolean isSurfaceReady = false;
+    
     private Handler handler = new Handler(Looper.getMainLooper());
     private Runnable runnable;
     
@@ -70,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
             registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
                 if (uri != null) {
                     selectedVideoUri = uri;
-                    writeLog("视频已选择: " + uri);
+                    writeLog("视频已选择：" + uri);
                     new Thread(() -> {
                         try {
                             tempVideoFile = copyToCache(uri);
@@ -78,7 +91,9 @@ public class MainActivity extends AppCompatActivity {
                                 writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B");
                                 runOnUiThread(() -> {
                                     txtStatus.setText("已缓存:" + (tempVideoFile.length()/1024/1024) + "MB");
-                                    playVideo();
+                                    if (isSurfaceReady) {
+                                        playVideo();
+                                    }
                                 });
                             } else {
                                 runOnUiThread(() -> {
@@ -111,10 +126,8 @@ public class MainActivity extends AppCompatActivity {
                     String output = completedSession.getOutput();
                     if (ReturnCode.isSuccess(returnCode)) {
                         writeLog("✅ FFmpegKit 测试成功");
-                        Toast.makeText(MainActivity.this, "FFmpegKit 正常", Toast.LENGTH_LONG).show();
                     } else {
                         writeLog("❌ FFmpegKit 测试失败：" + output);
-                        Toast.makeText(MainActivity.this, "FFmpegKit 失败：" + output, Toast.LENGTH_LONG).show();
                     }
                 });
             } catch (Exception e) {
@@ -142,7 +155,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void initViews() {
-        videoView = findViewById(R.id.videoView);
+        surfaceView = findViewById(R.id.surfaceView);
+        surfaceHolder = surfaceView.getHolder();
+        surfaceHolder.addCallback(this);
+        
         seekBar = findViewById(R.id.seekBarProgress);
         tvLeft = findViewById(R.id.tvLeft);
         tvRight = findViewById(R.id.tvRight);
@@ -153,11 +169,15 @@ public class MainActivity extends AppCompatActivity {
         btnExtractAudio = findViewById(R.id.btnExtractAudio);
         btnSetStartPoint = findViewById(R.id.btnSetStartPoint);
         btnSetEndPoint = findViewById(R.id.btnSetEndPoint);
+        btnPlayPause = findViewById(R.id.btnPlayPause);
+        btnStop = findViewById(R.id.btnStop);
         progressBar = findViewById(R.id.progressBar);
         txtStatus = findViewById(R.id.txtStatus);
         
         btnCutVideo.setEnabled(false);
         btnExtractAudio.setEnabled(false);
+        btnPlayPause.setEnabled(false);
+        btnStop.setEnabled(false);
         txtStatus.setVisibility(View.GONE);
     }
 
@@ -167,16 +187,16 @@ public class MainActivity extends AppCompatActivity {
         });
         
         btnSetStartPoint.setOnClickListener(v -> {
-            if (videoView != null && videoView.getCurrentPosition() > 0) {
-                cutStartSec = videoView.getCurrentPosition() / 1000;
+            if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+                cutStartSec = mediaPlayer.getCurrentPosition() / 1000;
                 tvCutStartTime.setText("起点：" + getTime(cutStartSec));
                 Toast.makeText(this, "起点已设为：" + getTime(cutStartSec), Toast.LENGTH_SHORT).show();
             }
         });
         
         btnSetEndPoint.setOnClickListener(v -> {
-            if (videoView != null && videoView.getCurrentPosition() > 0) {
-                cutEndSec = videoView.getCurrentPosition() / 1000;
+            if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+                cutEndSec = mediaPlayer.getCurrentPosition() / 1000;
                 tvCutEndTime.setText("终点：" + getTime(cutEndSec));
                 Toast.makeText(this, "终点已设为：" + getTime(cutEndSec), Toast.LENGTH_SHORT).show();
             }
@@ -185,19 +205,35 @@ public class MainActivity extends AppCompatActivity {
         btnCutVideo.setOnClickListener(v -> executeCutVideo());
         btnExtractAudio.setOnClickListener(v -> extractAudioAAC());
         
+        btnPlayPause.setOnClickListener(v -> {
+            if (mediaPlayer != null) {
+                if (isPlaying) {
+                    mediaPlayer.pause();
+                    btnPlayPause.setText("播放");
+                } else {
+                    mediaPlayer.start();
+                    btnPlayPause.setText("暂停");
+                }
+                isPlaying = !isPlaying;
+            }
+        });
+        
+        btnStop.setOnClickListener(v -> stopVideo());
+        
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser && !isSeeking) {
-                    videoView.seekTo(progress * 1000);
+                if (fromUser && mediaPlayer != null) {
+                    mediaPlayer.seekTo(progress * 1000);
                 }
             }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) { isSeeking = true; }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) { }
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-                isSeeking = false;
                 int progress = seekBar.getProgress();
-                videoView.seekTo(progress * 1000);
+                if (mediaPlayer != null) {
+                    mediaPlayer.seekTo(progress * 1000);
+                }
             }
         });
     }
@@ -260,58 +296,94 @@ public class MainActivity extends AppCompatActivity {
         
         String videoPath = tempVideoFile.getAbsolutePath();
         
-        // 错误监听器
-        videoView.setOnErrorListener(new MediaPlayer.OnErrorListener() {
-            @Override
-            public boolean onError(MediaPlayer mp, int what, int extra) {
-                writeLog("❌ VideoView 错误：" + what + ", " + extra);
-                Toast.makeText(MainActivity.this, "视频播放出错 (" + what + ")", Toast.LENGTH_SHORT).show();
-                return true;
+        try {
+            // 释放旧的 MediaPlayer
+            if (mediaPlayer != null) {
+                mediaPlayer.release();
+                mediaPlayer = null;
             }
-        });
+            
+            // 创建新的 MediaPlayer
+            mediaPlayer = new MediaPlayer();
+            mediaPlayer.setDataSource(videoPath);
+            mediaPlayer.setDisplay(surfaceHolder);
+            
+            // 设置监听器
+            mediaPlayer.setOnPreparedListener(this);
+            mediaPlayer.setOnErrorListener(this);
+            mediaPlayer.setOnCompletionListener(this);
+            
+            // 准备播放
+            mediaPlayer.prepareAsync();
+            writeLog("MediaPlayer 准备中...");
+            
+        } catch (Exception e) {
+            writeLog("❌ 播放失败：" + e.getMessage());
+            Toast.makeText(this, "无法播放视频：" + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    public void onPrepared(MediaPlayer mp) {
+        writeLog("✅ 视频准备完成，时长：" + mp.getDuration() + "ms");
+        duration = mp.getDuration() / 1000;
+        cutStartSec = 0;
+        cutEndSec = duration;
+        tvLeft.setText("00:00:00");
+        tvRight.setText(getTime(duration));
+        tvCutStartTime.setText("起点：00:00:00");
+        tvCutEndTime.setText("终点：" + getTime(duration));
         
-        // 准备监听器
-        videoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
-            @Override
-            public void onPrepared(MediaPlayer mp) {
-                writeLog("✅ 视频准备完成，时长：" + mp.getDuration() + "ms");
-                duration = mp.getDuration() / 1000;
-                cutStartSec = 0;
-                cutEndSec = duration;
-                tvLeft.setText("00:00:00");
-                tvRight.setText(getTime(duration));
-                tvCutStartTime.setText("起点：00:00:00");
-                tvCutEndTime.setText("终点：" + getTime(duration));
-                mp.setLooping(true);
-                seekBar.setMax(duration);
-                seekBar.setProgress(0);
-                seekBar.setEnabled(true);
-                
-                // 启用功能按钮
-                btnCutVideo.setEnabled(true);
-                btnExtractAudio.setEnabled(true);
-                
-                // 启动播放
-                videoView.start();
-                writeLog("▶️ 开始播放");
-                
-                // 进度更新
-                handler.postDelayed(runnable = () -> {
-                    int pos = videoView.getCurrentPosition() / 1000;
-                    if (!isSeeking) seekBar.setProgress(pos);
-                    handler.postDelayed(runnable, 1000);
-                }, 1000);
+        seekBar.setMax(duration);
+        seekBar.setProgress(0);
+        seekBar.setEnabled(true);
+        
+        // 启用功能按钮
+        btnCutVideo.setEnabled(true);
+        btnExtractAudio.setEnabled(true);
+        btnPlayPause.setEnabled(true);
+        btnStop.setEnabled(true);
+        
+        // 启动播放
+        mediaPlayer.start();
+        isPlaying = true;
+        btnPlayPause.setText("暂停");
+        writeLog("▶️ 开始播放");
+        
+        // 进度更新
+        handler.postDelayed(runnable = () -> {
+            if (mediaPlayer != null && isPlaying) {
+                int pos = mediaPlayer.getCurrentPosition() / 1000;
+                seekBar.setProgress(pos);
+                handler.postDelayed(runnable, 1000);
             }
-        });
-        
-        // 设置视频路径
-        videoView.setVideoPath(videoPath);
-        writeLog("设置视频路径：" + videoPath);
-        
-        // 添加 MediaController
-        MediaController mediaController = new MediaController(this);
-        mediaController.setAnchorView(videoView);
-        videoView.setMediaController(mediaController);
+        }, 1000);
+    }
+
+    @Override
+    public boolean onError(MediaPlayer mp, int what, int extra) {
+        writeLog("❌ MediaPlayer 错误：" + what + ", " + extra);
+        Toast.makeText(this, "视频播放出错 (" + what + ")", Toast.LENGTH_SHORT).show();
+        return true;
+    }
+
+    @Override
+    public void onCompletion(MediaPlayer mp) {
+        writeLog("播放完成");
+        isPlaying = false;
+        btnPlayPause.setText("播放");
+        seekBar.setProgress(duration);
+    }
+
+    private void stopVideo() {
+        if (mediaPlayer != null) {
+            mediaPlayer.stop();
+            mediaPlayer.seekTo(0);
+            isPlaying = false;
+            btnPlayPause.setText("播放");
+            seekBar.setProgress(0);
+            writeLog("⏹️ 停止播放");
+        }
     }
 
     private void executeCutVideo() {
@@ -562,22 +634,67 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+        writeLog("Surface 已创建");
+        isSurfaceReady = true;
+        surface = holder.getSurface();
+        
+        // 如果已经有视频文件，开始播放
+        if (tempVideoFile != null && tempVideoFile.exists()) {
+            playVideo();
+        }
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        writeLog("Surface 已改变：" + width + "x" + height);
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        writeLog("Surface 已销毁");
+        isSurfaceReady = false;
+        if (surface != null) {
+            surface.release();
+            surface = null;
+        }
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
-        if (videoView != null) videoView.pause();
+        if (mediaPlayer != null && isPlaying) {
+            mediaPlayer.pause();
+            isPlaying = false;
+            btnPlayPause.setText("播放");
+        }
         if (handler != null && runnable != null) handler.removeCallbacks(runnable);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (videoView != null && videoView.isPlaying()) videoView.start();
+        if (mediaPlayer != null && !isPlaying && mediaPlayer.isPlaying()) {
+            mediaPlayer.start();
+            isPlaying = true;
+            btnPlayPause.setText("暂停");
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (tempVideoFile != null && tempVideoFile.exists()) tempVideoFile.delete();
+        if (mediaPlayer != null) {
+            mediaPlayer.release();
+            mediaPlayer = null;
+        }
+        if (surface != null) {
+            surface.release();
+            surface = null;
+        }
+        if (tempVideoFile != null && tempVideoFile.exists()) {
+            tempVideoFile.delete();
+        }
         if (handler != null && runnable != null) handler.removeCallbacks(runnable);
         writeLog("应用结束");
     }

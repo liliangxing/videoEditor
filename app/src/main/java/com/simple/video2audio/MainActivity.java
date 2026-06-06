@@ -178,7 +178,10 @@ public class MainActivity extends AppCompatActivity {
         btnExtractAudio.setEnabled(false);
 
         File outputDir = new File(getCacheDir(), "audio");
-        if (!outputDir.exists()) outputDir.mkdirs();
+        if (!outputDir.exists()) {
+            boolean created = outputDir.mkdirs();
+            writeLog("audio dir created: " + created);
+        }
         
         File outputFile = new File(outputDir, "audio_" + System.currentTimeMillis() + ".m4a");
         
@@ -187,6 +190,8 @@ public class MainActivity extends AppCompatActivity {
                 quotePath(srcPath), quotePath(outputFile.getAbsolutePath()));
         
         writeLog("FFmpeg 命令：" + cmd);
+        writeLog("输出文件：" + outputFile.getAbsolutePath());
+        writeLog("源文件大小：" + tempVideoFile.length() + "B");
 
         final long startTime = System.currentTimeMillis();
         FFmpegUtil.execute(cmd, new FFmpegUtil.ExecuteCallback() {

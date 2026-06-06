@@ -1,58 +1,180 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mainlayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
-    android:background="#F5F5F5">
-
-    <ImageView
-        android:layout_width="120dp"
-        android:layout_height="120dp"
-        android:src="@drawable/ic_video"
-        android:contentDescription="Video Icon"/>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="视频转音频"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        android:textColor="#333333"
-        android:layout_marginTop="24dp"/>
-
-    <ProgressBar
-        android:id="@+id/progressBar"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:visibility="gone"/>
-
-    <TextView
-        android:id="@+id/txtStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="加载中..."
-        android:textSize="16sp"
-        android:textColor="#666666"
-        android:layout_marginTop="16dp"/>
-
-    <Button
-        android:id="@+id/btnSelectVideo"
+    android:fillViewport="true"
+    android:background="#f5f5f5">
+    
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="📁 选择视频"
-        android:textSize="18sp"
-        android:layout_marginTop="40dp"
-        android:backgroundTint="#2196F3"/>
-
-    <Button
-        android:id="@+id/btnExtractAudio"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:text="🎵 提取音频 (AAC)"
-        android:textSize="18sp"
-        android:layout_marginTop="16dp"
-        android:backgroundTint="#4CAF50"/>
-
-</LinearLayout>
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+        
+        <!-- VideoView - 直接用固定高度 300dp -->
+        <VideoView
+            android:id="@+id/videoView"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:layout_marginBottom="16dp"
+            android:background="#000000"/>
+        
+        <!-- 时间显示 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+            
+            <TextView
+                android:id="@+id/tvLeft"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="00:00:00"
+                android:textSize="14sp"
+                android:textColor="#666666"/>
+            
+            <SeekBar
+                android:id="@+id/seekBarProgress"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="4"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"/>
+            
+            <TextView
+                android:id="@+id/tvRight"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:text="00:00:00"
+                android:textSize="14sp"
+                android:textColor="#666666"/>
+        </LinearLayout>
+        
+        <!-- 剪切时间显示 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+            
+            <TextView
+                android:id="@+id/tvCutStartTime"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="起点：00:00:00"
+                android:textSize="13sp"
+                android:textColor="#333333"/>
+            
+            <TextView
+                android:id="@+id/tvCutEndTime"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:text="终点：00:00:00"
+                android:textSize="13sp"
+                android:textColor="#333333"/>
+        </LinearLayout>
+        
+        <!-- 提示文字 -->
+        <TextView
+            android:id="@+id/tvInstructions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="拖动进度条预览视频\n点击下方按钮设置剪切起点和终点"
+            android:textColor="#666666"
+            android:textSize="14sp"
+            android:layout_marginBottom="16dp"/>
+        
+        <!-- 选择视频按钮 -->
+        <Button
+            android:id="@+id/btnSelectVideo"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="📁 选择视频"
+            android:textSize="16sp"
+            android:textAllCaps="false"
+            android:layout_marginBottom="16dp"/>
+        
+        <!-- 功能按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+            
+            <Button
+                android:id="@+id/btnCutVideo"
+                android:layout_width="0dp"
+                android:layout_height="60dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="✂️ 切割视频"
+                android:textSize="15sp"
+                android:textAllCaps="false"/>
+            
+            <Button
+                android:id="@+id/btnExtractAudio"
+                android:layout_width="0dp"
+                android:layout_height="60dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="🎵 提取音频"
+                android:textSize="15sp"
+                android:textAllCaps="false"/>
+        </LinearLayout>
+        
+        <!-- 设置起点终点按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+            
+            <Button
+                android:id="@+id/btnSetStartPoint"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="设为起点"
+                android:textAllCaps="false"/>
+            
+            <Button
+                android:id="@+id/btnSetEndPoint"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="设为终点"
+                android:textAllCaps="false"/>
+        </LinearLayout>
+        
+        <!-- 状态显示 -->
+        <ProgressBar
+            android:id="@+id/progressBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone"
+            android:layout_marginTop="16dp"/>
+            
+        <TextView
+            android:id="@+id/txtStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="加载中..."
+            android:textSize="16sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"/>
+    </LinearLayout>
+</ScrollView>

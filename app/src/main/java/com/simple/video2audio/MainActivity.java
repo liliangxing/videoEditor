@@ -236,12 +236,13 @@ public class MainActivity extends AppCompatActivity {
 
         // 2. FFmpeg 命令（含 aformat 滤镜修复 NaN/Inf 问题）
         String srcPath = tempVideoFile.getAbsolutePath();
-        // 关键修复：-af aformat=sample_fmts=fltp|s16 将音频转为标准格式，规避 NaN/Inf
+        // ✅ 核心修复：aformat=sample_fmts=s16 强制转为 16 位整型，彻底规避 NaN/Inf
+        // 注意：不能用 fltp（浮点格式），不能用 |（会被 shell 解析为管道符）
         String[] cmd = {
             "-y",
             "-i", srcPath,
             "-vn",
-            "-af", "aformat=sample_fmts=fltp|s16",  // ✅ 核心修复：强制音频格式转换
+            "-af", "aformat=sample_fmts=s16",  // ✅ 修正：仅保留 s16 整型格式
             "-c:a", "aac",
             "-b:a", "192k",
             outputPath
@@ -257,9 +258,9 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onSuccess(String s) {
                     // 成功 - 打印输出日志
+                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + ffmpegLogs.toString());
                     writeLog("✅ FFMPEG_SUCCESS: 转换成功：" + outputPath);
                     writeLog("✓ FFmpeg 输出：" + s);
-                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + ffmpegLogs.toString());
                     writeLog("✓ AAC 转换成功，大小:" + outputFile.length() + "B");
                     
                     // 复制到公共目录
@@ -277,18 +278,31 @@ public class MainActivity extends AppCompatActivity {
 
                 @Override
                 public void onFailure(String s) {
-                    // ❌ 关键：捕获并打印完整 FFmpeg 日志
-                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + ffmpegLogs.toString());
+                    // ❌ 关键：捕获并打印完整 FFmpeg 日志（包括启动错误）
+                    String logs = ffmpegLogs.toString();
+                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + logs);
                     writeLog("❌ FFmpeg 失败日志：" + s);
                     
-                    // ✅ 检查是否含 NaN/Inf 错误
-                    if (hasNaNError || ffmpegLogs.toString().contains("NaN") || ffmpegLogs.toString().contains("infinity")) {
-                        Log.e("FFMPEG_ERROR", "⚠️ 检测到音频异常值！已自动通过 aformat 滤镜修复");
-                        writeLog("⚠️ FFMPEG_ERROR: 检测到音频异常值！已自动通过 aformat 滤镜修复");
+                    // ✅ 检查启动阶段错误（参数解析失败）
+                    if (logs.contains("Unrecognized option") || logs.contains("Error parsing") || logs.contains("Invalid argument")) {
+                        Log.e("FFMPEG_ERROR", "⚠️ 命令参数错误！检查 aformat 滤镜语法");
+                        writeLog("⚠️ FFMPEG_ERROR: 命令参数错误！检查 aformat 滤镜语法");
                     }
                     
-                    // ✅ 提取第一条有效错误信息
-                    String errorMsg = extractFirstError(ffmpegLogs.toString());
+                    // ✅ 检查 NaN/Inf 错误（修复后应消失）
+                    if (hasNaNError || logs.contains("NaN") || logs.contains("infinity")) {
+                        Log.e("FFMPEG_ERROR", "⚠️ 音频数据含异常值！确认 aformat=s16 已生效");
+                        writeLog("⚠️ FFMPEG_ERROR: 音频数据含异常值！确认 aformat=s16 已生效");
+                    }
+                    
+                    // ✅ 检查目录权限问题
+                    if (logs.contains("Permission denied") || logs.contains("No such file or directory")) {
+                        Log.e("FFMPEG_ERROR", "⚠️ 输出目录权限错误！确认已创建 audio/ 子目录");
+                        writeLog("⚠️ FFMPEG_ERROR: 输出目录权限错误！确认已创建 audio/ 子目录");
+                    }
+                    
+                    // ✅ 提取第一条有效错误信息（含启动错误）
+                    String errorMsg = extractFirstError(logs);
                     Log.e("FFMPEG_ERROR", "转换失败：" + errorMsg);
                     writeLog("❌ FFMPEG_ERROR: 转换失败：" + errorMsg);
                     
@@ -342,16 +356,23 @@ public class MainActivity extends AppCompatActivity {
     // 用于标记是否检测到 NaN/Inf 错误
     private boolean hasNaNError = false;
 
-    // 从 FFmpeg 日志中提取第一条错误信息
+    // 从 FFmpeg 日志中提取第一条错误信息（含启动错误）
     private String extractFirstError(String logs) {
         if (logs == null || logs.isEmpty()) {
             return "FFmpeg 未返回日志";
         }
         
         for (String line : logs.split("\n")) {
-            // 使用正则匹配错误关键词（忽略大小写）
-            if (line.matches(".*(?i)(error|failed|invalid|nan|infinity).*")) {
-                return line.trim();
+            // ✅ 捕获参数解析错误（启动阶段）
+            if (line.contains("Unrecognized option") || 
+                line.contains("Error parsing") || 
+                line.contains("Invalid argument")) {
+                return "启动错误：" + line.trim();
+            }
+            // ✅ 捕获执行中错误
+            if (line.contains("Error") || line.contains("failed") || 
+                line.contains("NaN") || line.contains("infinity")) {
+                return "执行错误：" + line.trim();
             }
         }
         

@@ -10,8 +10,8 @@ android {
         applicationId "com.simple.video2audio"
         minSdk 24
         targetSdk 34
-        versionCode 5
-        versionName "3.6"
+        versionCode 6
+        versionName "3.7"
         
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
@@ -46,9 +46,17 @@ android {
     }
 }
 
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+    mavenCentral()
+    google()
+}
+
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'com.writingminds:FFmpegAndroid:0.3.2'
+    implementation(name: 'ffmpeg-kit-full-5.1.LTS', ext: 'aar')
 }

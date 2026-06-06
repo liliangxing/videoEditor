@@ -84,6 +84,23 @@ public class MainActivity extends AppCompatActivity {
         initViews();
         setupListeners();
         writeLog("✓ FFmpegKit 已初始化");
+        
+        // 测试 FFmpegKit 是否能正常执行命令
+        FFmpegUtil.execute("-version", new FFmpegUtil.ExecuteCallback() {
+            @Override
+            public void onSuccess(String output) {
+                Log.w("FFmpegTest", "版本输出成功：\n" + output);
+                writeLog("✅ FFmpegKit 测试成功");
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "FFmpegKit 正常", Toast.LENGTH_LONG).show());
+            }
+
+            @Override
+            public void onFailure(String error) {
+                Log.e("FFmpegTest", "版本获取失败：" + error);
+                writeLog("❌ FFmpegKit 测试失败：" + error);
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "FFmpegKit 失败：" + error, Toast.LENGTH_LONG).show());
+            }
+        });
     }
 
     private boolean checkStoragePermission() {

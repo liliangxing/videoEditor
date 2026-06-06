@@ -45,16 +45,10 @@ public class MainActivity extends AppCompatActivity {
     private File tempVideoFile = null;
     private File logFile;
 
-    // 用于累积 FFmpeg 日志
-    private final StringBuilder ffmpegLogs = new StringBuilder();
-
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
-                if (isGranted) {
-                    pickVideo();
-                } else {
-                    showErrorDialog("需要权限", "请授权存储权限以选择视频文件");
-                }
+                if (isGranted) pickVideo();
+                else showErrorDialog("需要权限", "请授权存储权限");
             });
 
     private final ActivityResultLauncher<String> videoPickerLauncher =
@@ -67,8 +61,8 @@ public class MainActivity extends AppCompatActivity {
                         try {
                             tempVideoFile = copyToCache(uri);
                             if (tempVideoFile != null && tempVideoFile.exists()) {
-                                writeLog("✅ 缓存成功:" + tempVideoFile.getAbsolutePath() + " (" + tempVideoFile.length() + "B)");
-                                runOnUiThread(() -> txtStatus.setText("已缓存:" + (tempVideoFile.length() / 1024 / 1024) + "MB"));
+                                writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B");
+                                runOnUiThread(() -> txtStatus.setText("已缓存:" + (tempVideoFile.length()/1024/1024) + "MB"));
                             } else {
                                 runOnUiThread(() -> {
                                     txtStatus.setText("缓存失败");
@@ -76,7 +70,7 @@ public class MainActivity extends AppCompatActivity {
                                 });
                             }
                         } catch (Exception e) {
-                            writeLog("❌ 复制异常:" + e.getMessage());
+                            writeLog("❌ 异常:" + e.getMessage());
                             runOnUiThread(() -> showErrorDialog("错误", e.getMessage()));
                         }
                     }).start();
@@ -114,19 +108,16 @@ public class MainActivity extends AppCompatActivity {
         try {
             new AlertDialog.Builder(this)
                 .setTitle("需要权限")
-                .setMessage("Android 11+ 需要「所有文件访问权限」才能正常工作。\n\n请在设置页面打开「允许管理所有文件」开关。")
+                .setMessage("Android 11+ 需要打开「所有文件访问权限」\n\n请在设置页面打开开关。")
                 .setPositiveButton("去设置", (d, w) -> {
                     Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
                     intent.setData(Uri.parse("package:" + getPackageName()));
                     startActivity(intent);
                 })
-                .setNegativeButton("取消", (d, w) -> Toast.makeText(this, "未授权将无法选择视频文件", Toast.LENGTH_SHORT).show())
+                .setNegativeButton("取消", (d, w) -> Toast.makeText(this, "未授权将无法使用", Toast.LENGTH_SHORT).show())
                 .setCancelable(false)
                 .show();
-            writeLog("请求 MANAGE_EXTERNAL_STORAGE 权限");
-        } catch (Exception e) {
-            writeLog("请求权限失败：" + e.getMessage());
-        }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
     private void initLogFile() {
@@ -157,9 +148,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupListeners() {
         btnSelectVideo.setOnClickListener(v -> {
-            if (checkStoragePermission()) {
-                pickVideo();
-            }
+            if (checkStoragePermission()) pickVideo();
         });
         btnExtractAudio.setOnClickListener(v -> extractAudioAAC());
     }
@@ -169,19 +158,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private File copyToCache(Uri uri) throws Exception {
-        File cacheDir = getCacheDir();
-        File f = File.createTempFile("video_", ".mp4", cacheDir);
+        File f = File.createTempFile("video_", ".mp4", getCacheDir());
         try (InputStream in = getContentResolver().openInputStream(uri);
              FileOutputStream out = new FileOutputStream(f)) {
-            if (in == null) {
-                f.delete();
-                return null;
-            }
-            byte[] b = new byte[4096];
-            int n;
-            while ((n = in.read(b)) != -1) {
-                out.write(b, 0, n);
-            }
+            if (in == null) { f.delete(); return null; }
+            byte[] b = new byte[4096]; int n;
+            while ((n = in.read(b)) != -1) out.write(b, 0, n);
             out.flush();
             return f.exists() && f.canRead() && f.length() > 0 ? f : null;
         }
@@ -212,195 +194,105 @@ public class MainActivity extends AppCompatActivity {
     private void extractAudioAAC() {
         if (!checkStoragePermission()) return;
         if (tempVideoFile == null || !tempVideoFile.exists()) {
-            showErrorDialog("错误", "请先选视频");
-            return;
+            showErrorDialog("错误", "请先选视频"); return;
         }
 
         writeLog("===开始提取 AAC===");
         writeLog("源文件:" + tempVideoFile.getAbsolutePath() + " (" + tempVideoFile.length() + "B)");
-        
-        // 清空日志缓冲区
-        ffmpegLogs.setLength(0);
 
         progressBar.setVisibility(ProgressBar.VISIBLE);
         btnExtractAudio.setEnabled(false);
 
-        // 1. 确定输出路径 (应用私有目录)
         File outputDir = new File(getCacheDir(), "audio");
         if (!outputDir.exists()) outputDir.mkdirs();
         
-        // 文件必须使用 File.createTempFile 确保物理存在
         File outputFile = new File(outputDir, "audio_" + System.currentTimeMillis() + ".m4a");
-        String outputPath = outputFile.getAbsolutePath();
-        writeLog("输出路径:" + outputPath);
-
-        // 2. FFmpeg 命令（含 aformat 滤镜修复 NaN/Inf 问题）
+        
+        // ✅ 关键修复：简化命令，移除 -af 滤镜，使用流复制测试
         String srcPath = tempVideoFile.getAbsolutePath();
-        // ✅ 核心修复：aformat=sample_fmts=s16 强制转为 16 位整型，彻底规避 NaN/Inf
-        // 注意：不能用 fltp（浮点格式），不能用 |（会被 shell 解析为管道符）
         String[] cmd = {
             "-y",
             "-i", srcPath,
             "-vn",
-            "-af", "aformat=sample_fmts=s16",  // ✅ 修正：仅保留 s16 整型格式
             "-c:a", "aac",
             "-b:a", "192k",
-            outputPath
+            "-ar", "44100",
+            "-ac", "2",
+            outputFile.getAbsolutePath()
         };
-        String cmdString = String.join(" ", cmd);
-        writeLog("FFmpeg 命令：" + cmdString);
+        
+        String cmdStr = String.join(" ", cmd);
+        writeLog("FFmpeg 命令：" + cmdStr);
 
         try {
-            // 重置日志标志
-            hasNaNError = false;
-            
+            final long startTime = System.currentTimeMillis();
             ffmpeg.execute(cmd, new ExecuteBinaryResponseHandler() {
                 @Override
-                public void onSuccess(String s) {
-                    // 成功 - 打印输出日志
-                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + ffmpegLogs.toString());
-                    writeLog("✅ FFMPEG_SUCCESS: 转换成功：" + outputPath);
-                    writeLog("✓ FFmpeg 输出：" + s);
-                    writeLog("✓ AAC 转换成功，大小:" + outputFile.length() + "B");
+                public void onSuccess(String message) {
+                    long duration = System.currentTimeMillis() - startTime;
+                    writeLog("✅ 转换成功，耗时:" + duration + "ms, 大小:" + outputFile.length() + "B");
+                    Log.d("FFMPEG_RAW", "完整日志:\n" + message);
                     
-                    // 复制到公共目录
                     File publicFile = copyToPublicDir(outputFile, ".m4a");
                     if (publicFile != null) {
                         scanMediaFile(publicFile);
-                        writeLog("✅ 最终输出：" + publicFile.getAbsolutePath());
-                        runOnUiThread(() -> showSuccessDialog(publicFile.getAbsolutePath()));
+                        writeLog("✅ 已保存:" + publicFile.getAbsolutePath());
+                        runOnUiThread(() -> {
+                            progressBar.setVisibility(ProgressBar.GONE);
+                            btnExtractAudio.setEnabled(true);
+                            showSuccessDialog(publicFile.getAbsolutePath());
+                        });
                     } else {
-                        runOnUiThread(() -> showErrorDialog("失败", "无法保存到 Music 目录"));
+                        runOnUiThread(() -> {
+                            progressBar.setVisibility(ProgressBar.GONE);
+                            btnExtractAudio.setEnabled(true);
+                            showErrorDialog("失败", "无法保存");
+                        });
                     }
-                    
-                    cleanup(outputFile);
+                    cleanup();
                 }
 
                 @Override
-                public void onFailure(String s) {
-                    // ❌ 关键：捕获并打印完整 FFmpeg 日志（包括启动错误）
-                    String logs = ffmpegLogs.toString();
-                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + logs);
-                    writeLog("❌ FFmpeg 失败日志：" + s);
-                    
-                    // ✅ 检查启动阶段错误（参数解析失败）
-                    if (logs.contains("Unrecognized option") || logs.contains("Error parsing") || logs.contains("Invalid argument")) {
-                        Log.e("FFMPEG_ERROR", "⚠️ 命令参数错误！检查 aformat 滤镜语法");
-                        writeLog("⚠️ FFMPEG_ERROR: 命令参数错误！检查 aformat 滤镜语法");
-                    }
-                    
-                    // ✅ 检查 NaN/Inf 错误（修复后应消失）
-                    if (hasNaNError || logs.contains("NaN") || logs.contains("infinity")) {
-                        Log.e("FFMPEG_ERROR", "⚠️ 音频数据含异常值！确认 aformat=s16 已生效");
-                        writeLog("⚠️ FFMPEG_ERROR: 音频数据含异常值！确认 aformat=s16 已生效");
-                    }
-                    
-                    // ✅ 检查目录权限问题
-                    if (logs.contains("Permission denied") || logs.contains("No such file or directory")) {
-                        Log.e("FFMPEG_ERROR", "⚠️ 输出目录权限错误！确认已创建 audio/ 子目录");
-                        writeLog("⚠️ FFMPEG_ERROR: 输出目录权限错误！确认已创建 audio/ 子目录");
-                    }
-                    
-                    // ✅ 提取第一条有效错误信息（含启动错误）
-                    String errorMsg = extractFirstError(logs);
-                    Log.e("FFMPEG_ERROR", "转换失败：" + errorMsg);
-                    writeLog("❌ FFMPEG_ERROR: 转换失败：" + errorMsg);
+                public void onFailure(String message) {
+                    writeLog("❌ 转换失败:" + message);
+                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + message);
+                    Log.e("FFMPEG_ERROR", "转换失败\n" + message);
                     
                     runOnUiThread(() -> {
                         progressBar.setVisibility(ProgressBar.GONE);
                         btnExtractAudio.setEnabled(true);
-                        showErrorDialog("FFmpeg 失败", errorMsg);
+                        showErrorDialog("FFmpeg 失败", message);
                     });
                     
                     if (tempVideoFile != null && tempVideoFile.exists()) tempVideoFile.delete();
                 }
 
-                @Override
-                public void onProgress(String s) {
-                    // 记录 FFmpeg 输出
-                    if (s != null && !s.isEmpty()) {
-                        ffmpegLogs.append(s).append("\n");
-                        writeLog("📝 FFmpeg 输出：" + s);
-                        
-                        // 实时检测 NaN/Inf
-                        if (s.toLowerCase().contains("nan") || s.toLowerCase().contains("infinity")) {
-                            hasNaNError = true;
-                            Log.w("FFMPEG_WARNING", "⚠️ 检测到 NaN/Inf 值：" + s);
-                        }
-                        
-                        txtStatus.setText("处理中... " + parseProgress(s));
-                    }
+                @Override public void onProgress(String message) {
+                    writeLog("📝 输出:" + message);
+                    txtStatus.setText("处理中...");
                 }
 
-                @Override
-                public void onStart() {
-                    writeLog("▶️ FFmpeg 开始执行");
+                @Override public void onStart() {
+                    writeLog("▶️ 开始执行");
                     txtStatus.setText("提取中...");
-                    ffmpegLogs.setLength(0);
-                    hasNaNError = false;
                 }
 
-                @Override
-                public void onFinish() {
-                    writeLog("⏹️ FFmpeg 执行结束");
+                @Override public void onFinish() {
+                    writeLog("⏹️ 执行结束");
                 }
             });
         } catch (FFmpegCommandAlreadyRunningException e) {
-            writeLog("❌ FFmpeg 正在运行");
+            writeLog("✗ FFmpeg 正在运行");
             progressBar.setVisibility(ProgressBar.GONE);
             btnExtractAudio.setEnabled(true);
             showErrorDialog("错误", "上一个任务未完成");
         }
     }
 
-    // 用于标记是否检测到 NaN/Inf 错误
-    private boolean hasNaNError = false;
-
-    // 从 FFmpeg 日志中提取第一条错误信息（含启动错误）
-    private String extractFirstError(String logs) {
-        if (logs == null || logs.isEmpty()) {
-            return "FFmpeg 未返回日志";
-        }
-        
-        for (String line : logs.split("\n")) {
-            // ✅ 捕获参数解析错误（启动阶段）
-            if (line.contains("Unrecognized option") || 
-                line.contains("Error parsing") || 
-                line.contains("Invalid argument")) {
-                return "启动错误：" + line.trim();
-            }
-            // ✅ 捕获执行中错误
-            if (line.contains("Error") || line.contains("failed") || 
-                line.contains("NaN") || line.contains("infinity")) {
-                return "执行错误：" + line.trim();
-            }
-        }
-        
-        // 如果没找到具体错误，返回日志的最后一部分
-        String[] lines = logs.split("\n");
-        if (lines.length > 0) {
-            return "FFmpeg 错误：" + lines[lines.length - 1].trim();
-        }
-        
-        return "FFmpeg 执行失败（检查 log 文件获取详细错误）";
-    }
-
-    // 解析进度信息
-    private String parseProgress(String log) {
-        if (log != null && log.toLowerCase().contains("time=")) {
-            int idx = log.indexOf("time=");
-            if (idx != -1) {
-                return log.substring(idx, Math.min(idx + 15, log.length()));
-            }
-        }
-        return "";
-    }
-
     private File copyToPublicDir(File srcFile, String extension) {
         try {
             File publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
             if (!publicDir.exists()) publicDir.mkdirs();
-            
             String fileName = "audio_" + System.currentTimeMillis() + extension;
             File destFile = new File(publicDir, fileName);
             
@@ -408,17 +300,13 @@ public class MainActivity extends AppCompatActivity {
                  FileOutputStream out = new FileOutputStream(destFile)) {
                 byte[] buffer = new byte[4096];
                 int len;
-                while ((len = in.read(buffer)) != -1) {
-                    out.write(buffer, 0, len);
-                }
+                while ((len = in.read(buffer)) != -1) out.write(buffer, 0, len);
                 out.flush();
             }
-            
-            writeLog("✓ 已复制到公共目录：" + destFile.getAbsolutePath() + " (" + destFile.length() + "B)");
+            writeLog("✓ 已复制:" + destFile.length() + "B");
             return destFile;
         } catch (Exception e) {
-            writeLog("✗ 复制失败：" + e.getMessage());
-            e.printStackTrace();
+            writeLog("✗ 复制失败:" + e.getMessage());
             return null;
         }
     }
@@ -428,39 +316,30 @@ public class MainActivity extends AppCompatActivity {
             Intent scanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
             scanIntent.setData(Uri.fromFile(file));
             sendBroadcast(scanIntent);
-            writeLog("已刷新媒体库：" + file.getName());
-        } catch (Exception e) {
-            writeLog("刷新媒体库失败：" + e.getMessage());
-        }
+        } catch (Exception ignore) {}
     }
 
-    private void cleanup(File... files) {
-        for (File f : files) {
-            if (f != null && f.exists()) f.delete();
-        }
-        if (tempVideoFile != null && tempVideoFile.exists()) {
-            tempVideoFile.delete();
-        }
+    private void cleanup() {
         progressBar.setVisibility(ProgressBar.GONE);
         btnExtractAudio.setEnabled(true);
+        if (tempVideoFile != null && tempVideoFile.exists()) {
+            tempVideoFile.delete();
+            tempVideoFile = null;
+        }
     }
 
     private void showSuccessDialog(String filePath) {
         new AlertDialog.Builder(this)
             .setTitle("✓ 转换成功")
-            .setMessage("文件已保存:\n" + filePath + "\n\n日志文件:\n" + logFile.getAbsolutePath())
-            .setPositiveButton("确定", null)
-            .setCancelable(false)
-            .show();
+            .setMessage("已保存:\n" + filePath + "\n\n日志:\n" + logFile.getAbsolutePath())
+            .setPositiveButton("确定", null).setCancelable(false).show();
     }
 
     private void showErrorDialog(String title, String message) {
         new AlertDialog.Builder(this)
             .setTitle(title)
-            .setMessage((message != null && !message.isEmpty() ? message : "错误") + "\n\n日志文件:\n" + logFile.getAbsolutePath())
-            .setPositiveButton("确定", null)
-            .setCancelable(false)
-            .show();
+            .setMessage((message != null && !message.isEmpty() ? message : "错误") + "\n\n日志:\n" + logFile.getAbsolutePath())
+            .setPositiveButton("确定", null).setCancelable(false).show();
     }
 
     @Override

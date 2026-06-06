@@ -12,13 +12,26 @@
         android:orientation="vertical"
         android:padding="16dp">
         
-        <!-- SurfaceView for video rendering -->
-        <SurfaceView
-            android:id="@+id/surfaceView"
+        <!-- VideoView with preview -->
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="300dp"
-            android:layout_marginBottom="16dp"
-            android:background="#000000"/>
+            android:layout_marginBottom="16dp">
+            
+            <VideoView
+                android:id="@+id/videoView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#000000"/>
+            
+            <ImageView
+                android:id="@+id/videoPreviewImg"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:visibility="visible"
+                android:background="#333333"/>
+        </FrameLayout>
         
         <!-- 时间显示 -->
         <LinearLayout
@@ -127,10 +140,20 @@
                 android:layout_height="60dp"
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
-                android:text="🎵 提取音频"
+                android:text="🎵 提取 AAC"
                 android:textSize="15sp"
                 android:textAllCaps="false"/>
         </LinearLayout>
+        
+        <!-- MP3 提取按钮 -->
+        <Button
+            android:id="@+id/btnExtractMP3"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="🎤 提取 MP3"
+            android:textSize="16sp"
+            android:textAllCaps="false"
+            android:layout_marginBottom="16dp"/>
         
         <!-- 设置起点终点按钮 -->
         <LinearLayout
@@ -154,32 +177,6 @@
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
                 android:text="设为终点"
-                android:textAllCaps="false"/>
-        </LinearLayout>
-        
-        <!-- 播放控制按钮 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="16dp">
-            
-            <Button
-                android:id="@+id/btnPlayPause"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="8dp"
-                android:text="暂停"
-                android:textAllCaps="false"/>
-            
-            <Button
-                android:id="@+id/btnStop"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:text="停止"
                 android:textAllCaps="false"/>
         </LinearLayout>
         

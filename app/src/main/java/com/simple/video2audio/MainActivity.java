@@ -1,19 +1,17 @@
 package com.simple.video2audio;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.app.Dialog;
-import android.content.ContentUris;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.database.Cursor;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
-import android.provider.DocumentsContract;
-import android.provider.MediaStore;
+import android.provider.Settings;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -21,6 +19,7 @@ import android.widget.VideoView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import com.arthenica.ffmpegkit.FFmpegKit;
 import com.arthenica.ffmpegkit.ReturnCode;
 import java.io.File;
@@ -29,6 +28,7 @@ import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_VIDEO = 100;
+    private static final int PERMISSION_CODE = 100;
     private VideoView videoView;
     private SeekBar seekBar;
     private TextView tvLeft, tvRight, uploadVideo;
@@ -54,15 +54,21 @@ public class MainActivity extends AppCompatActivity {
         progressDialog.getWindow().setBackgroundDrawable(new ColorDrawable(android.graphics.Color.TRANSPARENT));
         progressDialog.setContentView(R.layout.dialog_singleoption_text);
         seekBar.setEnabled(false);
-        uploadVideo.setOnClickListener(v -> { if (checkPermission()) pickVideo(); });
+        
+        uploadVideo.setOnClickListener(v -> {
+            if (checkStoragePermission()) pickVideo();
+        });
+        
         findViewById(R.id.cutVideo).setOnClickListener(v -> {
             if (selectedVideoUri != null) executeCutVideo();
             else Toast.makeText(this, "请先选择视频", Toast.LENGTH_SHORT).show();
         });
+        
         findViewById(R.id.extractAudio).setOnClickListener(v -> {
             if (selectedVideoUri != null) extractAudio();
             else Toast.makeText(this, "请先选择视频", Toast.LENGTH_SHORT).show();
         });
+        
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -82,22 +88,53 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private boolean checkPermission() {
-        List<String> permissions = new ArrayList<>();
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
-            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
-            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE);
-        if (!permissions.isEmpty()) {
-            ActivityCompat.requestPermissions(this, permissions.toArray(new String[0]), 100);
-            return false;
+    // 增强的权限检查方法（严格按照建议修改）
+    private boolean checkStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // 关键：强制刷新一次权限状态，防止缓存信息不准确
+            if (!Environment.isExternalStorageManager()) {
+                // 若未授权，则发起请求引导用户去设置
+                requestManageStoragePermission();
+                return false;
+            }
+            return true;
+        } else {
+            // 对于 Android 10 及以下版本，同样需要确保权限有效
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, 
+                    new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, PERMISSION_CODE);
+                return false;
+            }
+            return true;
         }
-        return true;
+    }
+
+    // 引导用户去设置页面授权（Android 11+）
+    private void requestManageStoragePermission() {
+        new AlertDialog.Builder(this)
+            .setTitle("需要权限")
+            .setMessage("Android 11+ 需要打开「所有文件访问权限」\n\n请在设置页面打开开关。")
+            .setPositiveButton("去设置", (d, w) -> {
+                try {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                    intent.setData(android.net.Uri.parse("package:" + getPackageName()));
+                    startActivity(intent);
+                } catch (Exception e) {
+                    Toast.makeText(this, "无法打开设置页面", Toast.LENGTH_SHORT).show();
+                }
+            })
+            .setNegativeButton("取消", (d, w) -> Toast.makeText(this, "未授权将无法使用", Toast.LENGTH_SHORT).show())
+            .setCancelable(false)
+            .show();
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) pickVideo();
+        if (requestCode == PERMISSION_CODE && grantResults.length > 0 && 
+            grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            pickVideo();
+        }
     }
 
     private void pickVideo() {
@@ -109,7 +146,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+        if (resultCode == RESULT_OK && requestCode == REQUEST_VIDEO && data != null && data.getData() != null) {
             selectedVideoUri = data.getData();
             videoView.setVideoURI(selectedVideoUri);
             videoView.start();
@@ -154,18 +191,35 @@ public class MainActivity extends AppCompatActivity {
         File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);
         File dest = new File(dir, "cut_video_" + System.currentTimeMillis() + ".mp4");
         String srcPath = getPath(selectedVideoUri);
-        if (srcPath == null) { Toast.makeText(this, "无法获取视频路径", Toast.LENGTH_SHORT).show(); return; }
+        if (srcPath == null) {
+            Toast.makeText(this, "无法获取视频路径", Toast.LENGTH_SHORT).show();
+            return;
+        }
         filePath = dest.getAbsolutePath();
-        String[] cmd = {"-ss", String.valueOf(currentStart), "-y", "-i", srcPath, "-t", String.valueOf(currentEnd - currentStart),
+        String[] cmd = {"-ss", String.valueOf(currentStart), "-y", "-i", srcPath, 
+                "-t", String.valueOf(currentEnd - currentStart),
                 "-c:v", "mpeg4", "-b:v", "2M", "-c:a", "aac", "-b:a", "128k", filePath};
         executeFFmpeg(cmd, 1);
     }
 
     private void extractAudio() {
-        File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
-        File dest = new File(dir, "extract_audio_" + System.currentTimeMillis() + ".mp3");
+        // 优化：使用应用专属目录，无需 MANAGE_EXTERNAL_STORAGE 权限
+        File audioDir = getExternalFilesDir(null);
+        if (audioDir == null) {
+            audioDir = new File(getFilesDir(), "audio");
+        }
+        if (!audioDir.exists()) {
+            audioDir.mkdirs();
+        }
+        
+        long timestamp = System.currentTimeMillis();
+        File dest = new File(audioDir, "audio_" + timestamp + ".mp3");
+        
         String srcPath = getPath(selectedVideoUri);
-        if (srcPath == null) { Toast.makeText(this, "无法获取视频路径", Toast.LENGTH_SHORT).show(); return; }
+        if (srcPath == null) {
+            Toast.makeText(this, "无法获取视频路径", Toast.LENGTH_SHORT).show();
+            return;
+        }
         filePath = dest.getAbsolutePath();
         String[] cmd = {"-y", "-i", srcPath, "-vn", "-ar", "44100", "-ac", "2", "-b:a", "256k", "-f", "mp3", filePath};
         executeFFmpeg(cmd, 2);
@@ -179,8 +233,16 @@ public class MainActivity extends AppCompatActivity {
             hideProgress();
             ReturnCode rc = session.getReturnCode();
             if (ReturnCode.isSuccess(rc)) {
-                if (type == 1) startActivity(new Intent(this, PreviewActivity.class).putExtra("filepath", filePath));
-                else startActivity(new Intent(this, AudioPreviewActivity.class).putExtra("filepath", filePath));
+                Toast.makeText(this, "处理完成", Toast.LENGTH_SHORT).show();
+                if (type == 1) {
+                    startActivity(new Intent(this, PreviewActivity.class)
+                        .putExtra("filepath", filePath)
+                        .putExtra("filename", "cut_video_" + System.currentTimeMillis() + ".mp4"));
+                } else {
+                    startActivity(new Intent(this, AudioPreviewActivity.class)
+                        .putExtra("filepath", filePath)
+                        .putExtra("filename", "audio_" + System.currentTimeMillis() + ".mp3"));
+                }
             } else {
                 Toast.makeText(this, "处理失败", Toast.LENGTH_LONG).show();
             }
@@ -206,22 +268,6 @@ public class MainActivity extends AppCompatActivity {
     private String getPath(Uri uri) {
         if (uri == null) return null;
         if ("content".equalsIgnoreCase(uri.getScheme())) {
-            if (DocumentsContract.isDocumentUri(this, uri)) {
-                if ("com.android.externalstorage.documents".equals(uri.getAuthority())) {
-                    String docId = DocumentsContract.getDocumentId(uri);
-                    String[] split = docId.split(":");
-                    if ("primary".equalsIgnoreCase(split[0])) return Environment.getExternalStorageDirectory() + "/" + split[1];
-                } else if ("com.android.providers.downloads.documents".equals(uri.getAuthority())) {
-                    String id = DocumentsContract.getDocumentId(uri);
-                    Uri contentUri = ContentUris.withAppendedId(Uri.parse("content://downloads/public_downloads"), Long.valueOf(id));
-                    return getDataColumn(contentUri, null, null);
-                } else if ("com.android.providers.media.documents".equals(uri.getAuthority())) {
-                    String docId = DocumentsContract.getDocumentId(uri);
-                    String[] split = docId.split(":");
-                    Uri contentUri = "video".equals(split[0]) ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : null;
-                    if (contentUri != null) return getDataColumn(contentUri, "_id=?", new String[]{split[1]});
-                }
-            }
             return getDataColumn(uri, null, null);
         } else if ("file".equalsIgnoreCase(uri.getScheme())) {
             return uri.getPath();
@@ -230,11 +276,23 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String getDataColumn(Uri uri, String selection, String[] selectionArgs) {
-        Cursor cursor = null;
+        android.database.Cursor cursor = null;
         try {
             cursor = getContentResolver().query(uri, new String[]{"_data"}, selection, selectionArgs, null);
-            if (cursor != null && cursor.moveToFirst()) return cursor.getString(cursor.getColumnIndexOrThrow("_data"));
-        } finally { if (cursor != null) cursor.close(); }
+            if (cursor != null && cursor.moveToFirst()) {
+                return cursor.getString(cursor.getColumnIndexOrThrow("_data"));
+            }
+        } finally {
+            if (cursor != null) cursor.close();
+        }
         return null;
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (progressDialog != null) {
+            progressDialog.dismiss();
+        }
     }
 }

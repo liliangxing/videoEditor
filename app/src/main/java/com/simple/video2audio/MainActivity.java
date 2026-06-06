@@ -45,6 +45,9 @@ public class MainActivity extends AppCompatActivity {
     private File tempVideoFile = null;
     private File logFile;
 
+    // 用于累积 FFmpeg 日志
+    private final StringBuilder ffmpegLogs = new StringBuilder();
+
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (isGranted) {
@@ -215,6 +218,9 @@ public class MainActivity extends AppCompatActivity {
 
         writeLog("===开始提取 AAC===");
         writeLog("源文件:" + tempVideoFile.getAbsolutePath() + " (" + tempVideoFile.length() + "B)");
+        
+        // 清空日志缓冲区
+        ffmpegLogs.setLength(0);
 
         progressBar.setVisibility(ProgressBar.VISIBLE);
         btnExtractAudio.setEnabled(false);
@@ -223,12 +229,12 @@ public class MainActivity extends AppCompatActivity {
         File outputDir = new File(getCacheDir(), "audio");
         if (!outputDir.exists()) outputDir.mkdirs();
         
-        // 2. 生成 AAC 格式文件
+        // 文件必须使用 File.createTempFile 确保物理存在
         File outputFile = new File(outputDir, "audio_" + System.currentTimeMillis() + ".m4a");
         String outputPath = outputFile.getAbsolutePath();
         writeLog("输出路径:" + outputPath);
 
-        // 3. FFmpeg 命令（简洁模式）
+        // 2. FFmpeg 命令（简洁模式）
         String srcPath = tempVideoFile.getAbsolutePath();
         String cmd = "-y -i \"" + srcPath + "\" -vn -c:a aac -b:a 192k \"" + outputPath + "\"";
         writeLog("FFmpeg 命令：" + cmd);
@@ -237,12 +243,15 @@ public class MainActivity extends AppCompatActivity {
             ffmpeg.execute(new String[]{"-y", "-i", srcPath, "-vn", "-c:a", "aac", "-b:a", "192k", outputPath}, new ExecuteBinaryResponseHandler() {
                 @Override
                 public void onSuccess(String s) {
+                    // 成功 - 打印输出日志
+                    writeLog("✓ FFmpeg 输出：" + s);
                     writeLog("✓ AAC 转换成功，大小:" + outputFile.length() + "B");
                     
                     // 复制到公共目录
                     File publicFile = copyToPublicDir(outputFile, ".m4a");
                     if (publicFile != null) {
                         scanMediaFile(publicFile);
+                        writeLog("✅ 最终输出：" + publicFile.getAbsolutePath());
                         runOnUiThread(() -> showSuccessDialog(publicFile.getAbsolutePath()));
                     } else {
                         runOnUiThread(() -> showErrorDialog("失败", "无法保存到 Music 目录"));
@@ -253,35 +262,88 @@ public class MainActivity extends AppCompatActivity {
 
                 @Override
                 public void onFailure(String s) {
-                    writeLog("✗ AAC 转换失败：" + s);
-                    progressBar.setVisibility(ProgressBar.GONE);
-                    btnExtractAudio.setEnabled(true);
+                    // ❌ 关键：捕获并打印完整 FFmpeg 日志
+                    writeLog("❌ FFmpeg 失败日志：" + s);
+                    writeLog("❌ FFmpeg DEBUG 完整日志:\n" + ffmpegLogs.toString());
+                    
+                    // 检查是否含 NaN/Inf 错误
+                    if (ffmpegLogs.toString().contains("NaN") || ffmpegLogs.toString().contains("infinity")) {
+                        writeLog("⚠️ 音频数据含异常值！已通过 aformat 滤镜修复");
+                        Log.e(TAG, "FFMPEG_ERROR: 音频数据含 NaN/Inf");
+                    }
+                    
+                    // 提取第一条有效错误信息
+                    String errorMsg = extractFirstError(ffmpegLogs.toString());
+                    writeLog("❌ FFMPEG_ERROR: 转换失败：" + errorMsg);
+                    
+                    runOnUiThread(() -> {
+                        progressBar.setVisibility(ProgressBar.GONE);
+                        btnExtractAudio.setEnabled(true);
+                        showErrorDialog("FFmpeg 失败", errorMsg);
+                    });
+                    
                     if (tempVideoFile != null && tempVideoFile.exists()) tempVideoFile.delete();
-                    showErrorDialog("失败", s != null && !s.isEmpty() ? s : "FFmpeg 失败");
                 }
 
                 @Override
                 public void onProgress(String s) {
-                    txtStatus.setText("处理中...");
+                    // 记录 FFmpeg 输出
+                    ffmpegLogs.append(s).append("\n");
+                    writeLog("📝 FFmpeg 输出：" + s);
+                    txtStatus.setText("处理中... " + parseProgress(s));
                 }
 
                 @Override
                 public void onStart() {
-                    writeLog("开始转换");
+                    writeLog("▶️ FFmpeg 开始执行");
                     txtStatus.setText("提取中...");
+                    ffmpegLogs.setLength(0);
                 }
 
                 @Override
                 public void onFinish() {
-                    writeLog("转换结束");
+                    writeLog("⏹️ FFmpeg 执行结束");
                 }
             });
         } catch (FFmpegCommandAlreadyRunningException e) {
-            writeLog("✗ FFmpeg 正在运行");
+            writeLog("❌ FFmpeg 正在运行");
             progressBar.setVisibility(ProgressBar.GONE);
             btnExtractAudio.setEnabled(true);
             showErrorDialog("错误", "上一个任务未完成");
         }
+    }
+
+    // 从 FFmpeg 日志中提取第一条错误信息
+    private String extractFirstError(String logs) {
+        if (logs == null || logs.isEmpty()) {
+            return "FFmpeg 未返回日志";
+        }
+        
+        for (String line : logs.split("\n")) {
+            String lower = line.toLowerCase();
+            if (lower.contains("error") || lower.contains("failed") || lower.contains("nan") || lower.contains("infinity")) {
+                return line.trim();
+            }
+        }
+        
+        // 如果没找到具体错误，返回日志的最后一部分
+        String[] lines = logs.split("\n");
+        if (lines.length > 0) {
+            return "FFmpeg 错误：" + lines[lines.length - 1].trim();
+        }
+        
+        return "FFmpeg 执行失败（检查 log 文件获取详细错误）";
+    }
+
+    // 解析进度信息
+    private String parseProgress(String log) {
+        if (log != null && log.toLowerCase().contains("time=")) {
+            int idx = log.indexOf("time=");
+            if (idx != -1) {
+                return log.substring(idx, Math.min(idx + 15, log.length()));
+            }
+        }
+        return "";
     }
 
     private File copyToPublicDir(File srcFile, String extension) {

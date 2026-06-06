@@ -217,29 +217,40 @@ public class MainActivity extends AppCompatActivity {
         btnExtractAudioM4A.setEnabled(false);
         btnExtractAudioMP3.setEnabled(false);
 
-        // 先输出到应用私有目录（FFmpeg 有访问权限）
-        File tempOutDir = new File(getCacheDir(), "audio_temp");
-        if (!tempOutDir.exists()) tempOutDir.mkdirs();
-        File tempOut = new File(tempOutDir, "audio_" + System.currentTimeMillis() + ".m4a");
+        // 1. 确定输出路径 (应用私有目录)
+        File outputDir = new File(getCacheDir(), "Music");
+        if (!outputDir.exists()) outputDir.mkdirs();
+        
+        // 2. 生成 AAC 格式文件
+        String outputPath = new File(outputDir, "audio_" + System.currentTimeMillis() + ".m4a").getAbsolutePath();
+        writeLog("output:" + outputPath);
+        
+        // 3. 简洁有效的 FFmpeg 命令
         String srcPath = tempVideoFile.getAbsolutePath();
-        String tempDstPath = tempOut.getAbsolutePath();
-        writeLog("temp_dst:" + tempDstPath);
-
-        String[] cmd = {"-y", "-i", srcPath, "-vn", "-c:a", "aac", "-b:a", "192k", tempDstPath};
-        writeLog("cmd:" + String.join(" ", cmd));
+        String cmd = "-y -i \"" + srcPath + "\" -vn -c:a aac -b:a 192k \"" + outputPath + "\"";
+        writeLog("cmd:" + cmd);
 
         try {
-            ffmpeg.execute(cmd, new ExecuteBinaryResponseHandler() {
-                @Override public void onSuccess(String s) {
-                    writeLog("✓M4A encoding OK, size:" + tempOut.length() + "B");
-                    // 转换成功后复制到公共目录
-                    if (copyToPublicDir(tempOut, ".m4a")) {
-                        runOnUiThread(() -> showSuccess("M4A 提取成功", tempOut));
+            ffmpeg.execute(new String[]{"-y", "-i", srcPath, "-vn", "-c:a", "aac", "-b:a", "192k", outputPath}, new ExecuteBinaryResponseHandler() {
+                @Override
+                public void onSuccess(String s) {
+                    writeLog("✓M4A OK, size:" + new File(outputPath).length() + "B");
+                    if (copyToPublicDir(new File(outputPath), ".m4a")) {
+                        String publicPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).getAbsolutePath() + "/audio_" + System.currentTimeMillis() + ".m4a";
+                        progressBar.setVisibility(ProgressBar.GONE);
+                        btnExtractAudioM4A.setEnabled(true);
+                        btnExtractAudioMP3.setEnabled(true);
+                        showSuccessDialog(publicPath);
                     } else {
-                        runOnUiThread(() -> showErrorDialog("失败", "无法保存到 Music 目录"));
+                        progressBar.setVisibility(ProgressBar.GONE);
+                        btnExtractAudioM4A.setEnabled(true);
+                        btnExtractAudioMP3.setEnabled(true);
+                        showErrorDialog("失败", "无法保存到 Music 目录");
                     }
+                    if (tempVideoFile.exists()) tempVideoFile.delete();
                 }
-                @Override public void onFailure(String s) {
+                @Override
+                public void onFailure(String s) {
                     writeLog("✗M4A fail:" + s);
                     progressBar.setVisibility(ProgressBar.GONE);
                     btnExtractAudioM4A.setEnabled(true);
@@ -247,9 +258,12 @@ public class MainActivity extends AppCompatActivity {
                     if (tempVideoFile.exists()) tempVideoFile.delete();
                     showErrorDialog("失败", s == null || s.isEmpty() ? "FFmpeg 失败" : s);
                 }
-                @Override public void onProgress(String s) { txtStatus.setText("..."); }
-                @Override public void onStart() { writeLog("start"); txtStatus.setText("提取中..."); }
-                @Override public void onFinish() { writeLog("finish"); }
+                @Override
+                public void onProgress(String s) { txtStatus.setText("..."); }
+                @Override
+                public void onStart() { writeLog("start"); txtStatus.setText("提取中..."); }
+                @Override
+                public void onFinish() { writeLog("finish"); }
             });
         } catch (FFmpegCommandAlreadyRunningException e) {
             writeLog("✗running");

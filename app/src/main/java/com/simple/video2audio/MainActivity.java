@@ -180,35 +180,42 @@ public class MainActivity extends AppCompatActivity {
         progressBar.setVisibility(ProgressBar.VISIBLE);
         btnExtractAudio.setEnabled(false);
 
+        File audioDir = new File(getCacheDir(), "audio");
+        if (!audioDir.exists()) {
+            boolean created = audioDir.mkdirs();
+            writeLog("audio dir created: " + created);
+        }
+
         long timestamp = System.currentTimeMillis();
-        File tempFile = new File(getCacheDir(), "temp_audio_" + timestamp + ".m4a");
-        String tempOutputPath = tempFile.getAbsolutePath();
-        
+        String outputPath = audioDir.getAbsolutePath() + "/audio_" + timestamp + ".m4a";
         String srcPath = tempVideoFile.getAbsolutePath();
-        String cmd = String.format("-y -i %s -vn -c:a aac -b:a 192k -ar 44100 -ac 2 %s",
-                quotePath(srcPath), quotePath(tempOutputPath));
-        
+        String cmd = "-y -i " + quotePath(srcPath) + " -vn -c:a aac -b:a 192k -ar 44100 -ac 2 " + quotePath(outputPath);
+
         writeLog("FFmpeg 命令：" + cmd);
-        writeLog("临时输出文件：" + tempOutputPath);
-        writeLog("源文件大小：" + tempVideoFile.length() + "B");
+        writeLog("输出文件：" + outputPath);
 
         final long startTime = System.currentTimeMillis();
         FFmpegUtil.execute(cmd, new FFmpegUtil.ExecuteCallback() {
             @Override
             public void onSuccess(String output) {
                 long duration = System.currentTimeMillis() - startTime;
-                writeLog("✅ 转换成功，耗时:" + duration + "ms, 大小:" + tempFile.length() + "B");
+                writeLog("✅ 转换成功，耗时:" + duration + "ms");
+                Log.i(TAG, "✅ 转换成功：" + output);
                 Log.d("FFMPEG_RAW", "完整日志:\n" + output);
-                
+
+                File audioFile = new File(outputPath);
+                writeLog("输出文件大小:" + audioFile.length() + "B");
+
                 String fileName = "audio_" + timestamp + ".m4a";
-                saveToPublicMusic(tempFile, fileName, "audio/mp4");
-                
+                saveToPublicMusic(audioFile, fileName, "audio/mp4");
+
                 writeLog("✅ 已保存到 Music 目录");
-                tempFile.delete();
-                
+                audioFile.delete();
+
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
                     btnExtractAudio.setEnabled(true);
+                    Toast.makeText(MainActivity.this, "音频提取成功！", Toast.LENGTH_SHORT).show();
                     showSuccessDialog("已保存到 Music 目录/" + fileName);
                 });
                 cleanup();
@@ -219,15 +226,17 @@ public class MainActivity extends AppCompatActivity {
                 long duration = System.currentTimeMillis() - startTime;
                 writeLog("❌ 转换失败，耗时:" + duration + "ms");
                 writeLog("错误详情:" + error);
+                Log.e(TAG, "❌ 转换失败：" + error);
                 Log.d("FFMPEG_RAW", "完整原始日志:\n" + error);
                 Log.e("FFMPEG_ERROR", "转换失败\n" + error);
-                
+
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
                     btnExtractAudio.setEnabled(true);
+                    Toast.makeText(MainActivity.this, "失败：" + error, Toast.LENGTH_LONG).show();
                     showErrorDialog("FFmpeg 失败", error);
                 });
-                
+
                 if (tempVideoFile != null && tempVideoFile.exists()) tempVideoFile.delete();
             }
         });

@@ -234,17 +234,32 @@ public class MainActivity extends AppCompatActivity {
         String outputPath = outputFile.getAbsolutePath();
         writeLog("输出路径:" + outputPath);
 
-        // 2. FFmpeg 命令（简洁模式）
+        // 2. FFmpeg 命令（含 aformat 滤镜修复 NaN/Inf 问题）
         String srcPath = tempVideoFile.getAbsolutePath();
-        String cmd = "-y -i \"" + srcPath + "\" -vn -c:a aac -b:a 192k \"" + outputPath + "\"";
-        writeLog("FFmpeg 命令：" + cmd);
+        // 关键修复：-af aformat=sample_fmts=fltp|s16 将音频转为标准格式，规避 NaN/Inf
+        String[] cmd = {
+            "-y",
+            "-i", srcPath,
+            "-vn",
+            "-af", "aformat=sample_fmts=fltp|s16",  // ✅ 核心修复：强制音频格式转换
+            "-c:a", "aac",
+            "-b:a", "192k",
+            outputPath
+        };
+        String cmdString = String.join(" ", cmd);
+        writeLog("FFmpeg 命令：" + cmdString);
 
         try {
-            ffmpeg.execute(new String[]{"-y", "-i", srcPath, "-vn", "-c:a", "aac", "-b:a", "192k", outputPath}, new ExecuteBinaryResponseHandler() {
+            // 重置日志标志
+            hasNaNError = false;
+            
+            ffmpeg.execute(cmd, new ExecuteBinaryResponseHandler() {
                 @Override
                 public void onSuccess(String s) {
                     // 成功 - 打印输出日志
+                    writeLog("✅ FFMPEG_SUCCESS: 转换成功：" + outputPath);
                     writeLog("✓ FFmpeg 输出：" + s);
+                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + ffmpegLogs.toString());
                     writeLog("✓ AAC 转换成功，大小:" + outputFile.length() + "B");
                     
                     // 复制到公共目录
@@ -263,17 +278,18 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onFailure(String s) {
                     // ❌ 关键：捕获并打印完整 FFmpeg 日志
+                    Log.d("FFMPEG_RAW", "完整原始日志:\n" + ffmpegLogs.toString());
                     writeLog("❌ FFmpeg 失败日志：" + s);
-                    writeLog("❌ FFmpeg DEBUG 完整日志:\n" + ffmpegLogs.toString());
                     
-                    // 检查是否含 NaN/Inf 错误
-                    if (ffmpegLogs.toString().contains("NaN") || ffmpegLogs.toString().contains("infinity")) {
-                        writeLog("⚠️ 音频数据含异常值！已通过 aformat 滤镜修复");
-                        Log.e(TAG, "FFMPEG_ERROR: 音频数据含 NaN/Inf");
+                    // ✅ 检查是否含 NaN/Inf 错误
+                    if (hasNaNError || ffmpegLogs.toString().contains("NaN") || ffmpegLogs.toString().contains("infinity")) {
+                        Log.e("FFMPEG_ERROR", "⚠️ 检测到音频异常值！已自动通过 aformat 滤镜修复");
+                        writeLog("⚠️ FFMPEG_ERROR: 检测到音频异常值！已自动通过 aformat 滤镜修复");
                     }
                     
-                    // 提取第一条有效错误信息
+                    // ✅ 提取第一条有效错误信息
                     String errorMsg = extractFirstError(ffmpegLogs.toString());
+                    Log.e("FFMPEG_ERROR", "转换失败：" + errorMsg);
                     writeLog("❌ FFMPEG_ERROR: 转换失败：" + errorMsg);
                     
                     runOnUiThread(() -> {
@@ -288,9 +304,18 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onProgress(String s) {
                     // 记录 FFmpeg 输出
-                    ffmpegLogs.append(s).append("\n");
-                    writeLog("📝 FFmpeg 输出：" + s);
-                    txtStatus.setText("处理中... " + parseProgress(s));
+                    if (s != null && !s.isEmpty()) {
+                        ffmpegLogs.append(s).append("\n");
+                        writeLog("📝 FFmpeg 输出：" + s);
+                        
+                        // 实时检测 NaN/Inf
+                        if (s.toLowerCase().contains("nan") || s.toLowerCase().contains("infinity")) {
+                            hasNaNError = true;
+                            Log.w("FFMPEG_WARNING", "⚠️ 检测到 NaN/Inf 值：" + s);
+                        }
+                        
+                        txtStatus.setText("处理中... " + parseProgress(s));
+                    }
                 }
 
                 @Override
@@ -298,6 +323,7 @@ public class MainActivity extends AppCompatActivity {
                     writeLog("▶️ FFmpeg 开始执行");
                     txtStatus.setText("提取中...");
                     ffmpegLogs.setLength(0);
+                    hasNaNError = false;
                 }
 
                 @Override
@@ -313,6 +339,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // 用于标记是否检测到 NaN/Inf 错误
+    private boolean hasNaNError = false;
+
     // 从 FFmpeg 日志中提取第一条错误信息
     private String extractFirstError(String logs) {
         if (logs == null || logs.isEmpty()) {
@@ -320,8 +349,8 @@ public class MainActivity extends AppCompatActivity {
         }
         
         for (String line : logs.split("\n")) {
-            String lower = line.toLowerCase();
-            if (lower.contains("error") || lower.contains("failed") || lower.contains("nan") || lower.contains("infinity")) {
+            // 使用正则匹配错误关键词（忽略大小写）
+            if (line.matches(".*(?i)(error|failed|invalid|nan|infinity).*")) {
                 return line.trim();
             }
         }

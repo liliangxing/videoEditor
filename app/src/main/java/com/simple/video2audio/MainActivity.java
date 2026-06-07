@@ -38,19 +38,27 @@ import java.io.FileWriter;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.Enumeration;
+import java.util.List;
 import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
+import android.view.ViewGroup;
 
 public class MainActivity extends AppCompatActivity {
     
     private static final String TAG = "VideoToAudio";
     
-    private ImageView videoPreviewImg;
+    private ImageView videoPreviewImg, pauseIcon;
     private SurfaceView surfaceView;
     private SeekBar seekBar;
-    private TextView txtStartTime, txtEndTime, txtStatus;
+    private TextView txtStartTime, txtEndTime;
     private ProgressBar progressBar;
-    private Button btnPlay, btnSetStart, btnSetEnd, btnSelectVideo, btnCutVideo, btnExtractAudio, btnExtractMP3;
+    private Button btnPlay, btnSetStart, btnSetEnd, btnSelectVideo, btnCutVideo, btnExtractAudio, btnExtractMP3, btnArchive;
     
     private VideoPlayerManager videoPlayerManager;
     private String currentVideoPath = null;
@@ -106,11 +114,11 @@ public class MainActivity extends AppCompatActivity {
 
     private void initViews() {
         videoPreviewImg = findViewById(R.id.videoPreviewImg);
+        pauseIcon = findViewById(R.id.pauseIcon);
         surfaceView = findViewById(R.id.surfaceView);
         seekBar = findViewById(R.id.seekBar);
         txtStartTime = findViewById(R.id.txtStartTime);
         txtEndTime = findViewById(R.id.txtEndTime);
-        txtStatus = findViewById(R.id.txtStatus);
         progressBar = findViewById(R.id.progressBar);
         btnPlay = findViewById(R.id.btnPlay);
         btnSetStart = findViewById(R.id.btnSetStart);
@@ -119,11 +127,13 @@ public class MainActivity extends AppCompatActivity {
         btnCutVideo = findViewById(R.id.btnCutVideo);
         btnExtractAudio = findViewById(R.id.btnExtractAudio);
         btnExtractMP3 = findViewById(R.id.btnExtractMP3);
+        btnArchive = findViewById(R.id.btnArchive);
         
         btnPlay.setEnabled(false);
         btnCutVideo.setEnabled(false);
         btnExtractAudio.setEnabled(false);
         btnExtractMP3.setEnabled(false);
+        btnArchive.setEnabled(false);
         
         surfaceView.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override
@@ -138,6 +148,19 @@ public class MainActivity extends AppCompatActivity {
                                 seekBar.setMax(duration);
                                 updateTimeText(0, duration);
                                 btnPlay.setText("⏸ 暂停");
+                                hidePauseIcon();
+                                videoPreviewImg.setVisibility(View.GONE);
+                                
+                                int videoWidth = videoPlayerManager.getVideoWidth();
+                                int videoHeight = videoPlayerManager.getVideoHeight();
+                                if (videoWidth > 0 && videoHeight > 0) {
+                                    float aspectRatio = (float) videoWidth / videoHeight;
+                                    int surfaceWidth = surfaceView.getWidth();
+                                    int newHeight = (int) (surfaceWidth / aspectRatio);
+                                    ViewGroup.LayoutParams params = surfaceView.getLayoutParams();
+                                    params.height = newHeight;
+                                    surfaceView.setLayoutParams(params);
+                                }
                             });
                         }
 
@@ -179,6 +202,20 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void surfaceDestroyed(SurfaceHolder holder) {}
+        });
+        
+        surfaceView.setOnClickListener(v -> {
+            if (videoPlayerManager != null && videoPlayerManager.isPrepared()) {
+                if (videoPlayerManager.isPlaying()) {
+                    videoPlayerManager.pause();
+                    btnPlay.setText("▶ 播放");
+                    showPauseIcon();
+                } else {
+                    videoPlayerManager.start();
+                    btnPlay.setText("⏸ 暂停");
+                    hidePauseIcon();
+                }
+            }
         });
         
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -250,6 +287,7 @@ public class MainActivity extends AppCompatActivity {
         btnCutVideo.setOnClickListener(v -> executeCutVideo());
         btnExtractAudio.setOnClickListener(v -> extractAudio("m4a", "audio/mp4", "AAC"));
         btnExtractMP3.setOnClickListener(v -> extractAudio("mp3", "audio/mpeg", "MP3"));
+        btnArchive.setOnClickListener(v -> archiveVideos());
     }
 
     private final ActivityResultLauncher<String> requestPermissionLauncher =
@@ -269,18 +307,17 @@ public class MainActivity extends AppCompatActivity {
                                 writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B");
                                 currentVideoPath = tempVideoFile.getAbsolutePath();
                                 runOnUiThread(() -> {
-                                    txtStatus.setText("已加载:" + (tempVideoFile.length()/1024/1024) + "MB");
                                     videoPreviewImg.setVisibility(View.VISIBLE);
                                     btnCutVideo.setEnabled(true);
                                     btnExtractAudio.setEnabled(true);
                                     btnExtractMP3.setEnabled(true);
+                                    btnArchive.setEnabled(true);
                                     if (videoPlayerManager != null) {
                                         videoPlayerManager.loadVideo(currentVideoPath);
                                     }
                                 });
                             } else {
                                 runOnUiThread(() -> {
-                                    txtStatus.setText("缓存失败");
                                     showErrorDialog("错误", "无法缓存视频文件");
                                 });
                             }
@@ -346,7 +383,6 @@ public class MainActivity extends AppCompatActivity {
         writeLog("切割范围：" + formatTime(cutStartMs) + " - " + formatTime(cutEndMs));
         
         progressBar.setVisibility(ProgressBar.VISIBLE);
-        txtStatus.setText("切割中...");
         enableButtons(false);
         
         File outputDir = new File(getCacheDir(), "cut_video");
@@ -380,7 +416,6 @@ public class MainActivity extends AppCompatActivity {
                 
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
-                    txtStatus.setText("切割完成");
                     enableButtons(true);
                     Toast.makeText(this, "视频切割成功！", Toast.LENGTH_SHORT).show();
                     showSuccessDialog("已保存：cut_" + timestamp + ".mp4");
@@ -391,7 +426,6 @@ public class MainActivity extends AppCompatActivity {
                 
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
-                    txtStatus.setText("切割失败");
                     enableButtons(true);
                     Toast.makeText(this, "失败：" + output, Toast.LENGTH_LONG).show();
                     showErrorDialog("切割失败", output);
@@ -410,7 +444,6 @@ public class MainActivity extends AppCompatActivity {
         writeLog("源文件：" + currentVideoPath);
         
         progressBar.setVisibility(ProgressBar.VISIBLE);
-        txtStatus.setText("提取中...");
         enableButtons(false);
         
         File audioDir = new File(getCacheDir(), "audio");
@@ -442,7 +475,6 @@ public class MainActivity extends AppCompatActivity {
                 
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
-                    txtStatus.setText("提取完成");
                     enableButtons(true);
                     Toast.makeText(this, formatName + "提取成功！", Toast.LENGTH_SHORT).show();
                     showSuccessDialog("已保存到 Music 目录");
@@ -453,7 +485,6 @@ public class MainActivity extends AppCompatActivity {
                 
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
-                    txtStatus.setText("提取失败");
                     enableButtons(true);
                     Toast.makeText(this, "失败：" + output, Toast.LENGTH_LONG).show();
                     showErrorDialog("提取失败", output);
@@ -473,6 +504,7 @@ public class MainActivity extends AppCompatActivity {
         btnCutVideo.setEnabled(enabled && currentVideoPath != null);
         btnExtractAudio.setEnabled(enabled && currentVideoPath != null);
         btnExtractMP3.setEnabled(enabled && currentVideoPath != null);
+        btnArchive.setEnabled(enabled && currentVideoPath != null);
     }
 
     private String quotePath(String path) {
@@ -589,5 +621,159 @@ public class MainActivity extends AppCompatActivity {
             tempVideoFile.delete();
         }
         writeLog("应用结束");
+    }
+    
+    private void showPauseIcon() {
+        if (pauseIcon != null) {
+            pauseIcon.setVisibility(View.VISIBLE);
+        }
+    }
+    
+    private void hidePauseIcon() {
+        if (pauseIcon != null) {
+            pauseIcon.setVisibility(View.GONE);
+        }
+    }
+    
+    private void archiveVideos() {
+        if (currentVideoPath == null) {
+            showErrorDialog("错误", "请先选择视频");
+            return;
+        }
+        
+        writeLog("===开始归档视频===");
+        
+        progressBar.setVisibility(ProgressBar.VISIBLE);
+        enableButtons(false);
+        
+        new Thread(() -> {
+            try {
+                File archiveDir = new File(getExternalFilesDir(null), "archives");
+                if (!archiveDir.exists()) {
+                    archiveDir.mkdirs();
+                }
+                
+                String zipFileName = "archive_" + System.currentTimeMillis() + ".zip";
+                File zipFile = new File(archiveDir, zipFileName);
+                
+                List<File> filesToArchive = new ArrayList<>();
+                filesToArchive.add(new File(currentVideoPath));
+                
+                File cutVideoDir = new File(getCacheDir(), "cut_video");
+                if (cutVideoDir.exists()) {
+                    addDirToZip(cutVideoDir, filesToArchive);
+                }
+                
+                File audioDir = new File(getCacheDir(), "audio");
+                if (audioDir.exists()) {
+                    addDirToZip(audioDir, filesToArchive);
+                }
+                
+                addFilesToZip(filesToArchive, zipFile);
+                
+                File finalZip = saveToPublicDocuments(zipFile, zipFileName, "application/zip");
+                
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    enableButtons(true);
+                    Toast.makeText(this, "归档成功！共打包 " + getZipFileCount(zipFile) + " 个文件", Toast.LENGTH_SHORT).show();
+                    showSuccessDialog("已保存到 Documents 目录：" + zipFileName);
+                });
+                
+                writeLog("✅ 归档成功：" + zipFile.length() + "B, 文件数：" + getZipFileCount(zipFile));
+            } catch (Exception e) {
+                writeLog("❌ 归档失败：" + e.getMessage());
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    enableButtons(true);
+                    Toast.makeText(this, "归档失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
+                    showErrorDialog("归档失败", e.getMessage());
+                });
+            }
+        }).start();
+    }
+    
+    private int getZipFileCount(File file) {
+        int count = 0;
+        try (ZipFile zip = new ZipFile(file)) {
+            count = zip.size();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return count;
+    }
+    
+    private void addFilesToZip(List<File> files, File zipFile) throws Exception {
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
+            for (File file : files) {
+                if (file.exists()) {
+                    ZipEntry entry = new ZipEntry(file.getName());
+                    zos.putNextEntry(entry);
+                    try (FileInputStream fis = new FileInputStream(file)) {
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = fis.read(buffer)) > 0) {
+                            zos.write(buffer, 0, len);
+                        }
+                    }
+                    zos.closeEntry();
+                }
+            }
+        }
+    }
+    
+    private void addDirToZip(File dir, List<File> fileList) {
+        File[] files = dir.listFiles();
+        if (files != null) {
+            fileList.addAll(Arrays.asList(files));
+        }
+    }
+    
+    private File saveToPublicDocuments(File sourceFile, String fileName, String mimeType) {
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Files.FileColumns.DISPLAY_NAME, fileName);
+            values.put(MediaStore.Files.FileColumns.MIME_TYPE, mimeType);
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.put(MediaStore.Files.FileColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS);
+            }
+            
+            Uri collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+            Uri itemUri = getContentResolver().insert(collection, values);
+            
+            if (itemUri != null) {
+                try (OutputStream out = getContentResolver().openOutputStream(itemUri);
+                     FileInputStream in = new FileInputStream(sourceFile)) {
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = in.read(buffer)) > 0) {
+                        out.write(buffer, 0, len);
+                    }
+                }
+                writeLog("✓ 已保存到 Documents: " + fileName);
+                return new File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName);
+            }
+        } catch (Exception e) {
+            writeLog("✗ 保存失败：" + e.getMessage());
+            e.printStackTrace();
+        }
+        return sourceFile;
+    }
+    
+    private void deleteDir(File dir) {
+        if (dir.exists()) {
+            File[] files = dir.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    if (file.isDirectory()) {
+                        deleteDir(file);
+                    } else {
+                        file.delete();
+                    }
+                }
+            }
+            dir.delete();
+        }
     }
 }

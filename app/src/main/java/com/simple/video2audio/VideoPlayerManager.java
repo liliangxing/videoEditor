@@ -153,6 +153,14 @@ public class VideoPlayerManager {
         return isPlaying;
     }
 
+    public int getVideoWidth() {
+        return (mediaPlayer != null && isPrepared) ? mediaPlayer.getVideoWidth() : 0;
+    }
+
+    public int getVideoHeight() {
+        return (mediaPlayer != null && isPrepared) ? mediaPlayer.getVideoHeight() : 0;
+    }
+
     public void release() {
         if (progressHandler != null) {
             progressHandler.removeCallbacks(progressRunnable);

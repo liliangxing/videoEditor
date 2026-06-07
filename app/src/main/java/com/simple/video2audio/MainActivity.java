@@ -56,6 +56,7 @@ public class MainActivity extends AppCompatActivity {
     private ImageView pauseIcon;
     private SurfaceView surfaceView;
     private SeekBar seekBar;
+    private SeekBar seekBarStart, seekBarEnd;
     private TextView txtStartTime, txtCurrentTime, txtEndTime;
     private ProgressBar progressBar;
     private Button btnSelectVideo, btnExtractAudio, btnExtractMP3, btnArchive;
@@ -65,7 +66,10 @@ public class MainActivity extends AppCompatActivity {
     private File tempVideoFile = null;
     private File logFile;
     
+    private int cutStartMs = 0;
+    private int cutEndMs = 0;
     private int videoDurationMs = 0;
+    private boolean isUserDragging = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -114,6 +118,8 @@ public class MainActivity extends AppCompatActivity {
         pauseIcon = findViewById(R.id.pauseIcon);
         surfaceView = findViewById(R.id.surfaceView);
         seekBar = findViewById(R.id.seekBar);
+        seekBarStart = findViewById(R.id.seekBarStart);
+        seekBarEnd = findViewById(R.id.seekBarEnd);
         txtStartTime = findViewById(R.id.txtStartTime);
         txtCurrentTime = findViewById(R.id.txtCurrentTime);
         txtEndTime = findViewById(R.id.txtEndTime);
@@ -127,6 +133,8 @@ public class MainActivity extends AppCompatActivity {
         btnExtractMP3.setEnabled(false);
         btnArchive.setEnabled(false);
         
+        setupSeekBarListeners();
+        
         surfaceView.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override
             public void surfaceCreated(SurfaceHolder holder) {
@@ -137,6 +145,12 @@ public class MainActivity extends AppCompatActivity {
                             runOnUiThread(() -> {
                                 videoDurationMs = duration;
                                 seekBar.setMax(duration);
+                                seekBarStart.setMax(duration);
+                                seekBarEnd.setMax(duration);
+                                seekBarStart.setProgress(0);
+                                seekBarEnd.setProgress(duration);
+                                cutStartMs = 0;
+                                cutEndMs = duration;
                                 updateTimeText(0, duration);
                                 hidePauseIcon();
                                 
@@ -156,8 +170,15 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void onProgressUpdate(int currentPosition, int duration) {
                             runOnUiThread(() -> {
-                                seekBar.setProgress(currentPosition);
-                                updateTimeText(currentPosition, duration);
+                                if (!isUserDragging) {
+                                    seekBar.setProgress(currentPosition);
+                                }
+                                
+                                txtCurrentTime.setText(formatTime(currentPosition));
+                                
+                                if (currentPosition >= cutEndMs) {
+                                    videoPlayerManager.seekTo(cutStartMs);
+                                }
                             });
                         }
 
@@ -204,19 +225,61 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
-        
-        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+    }
+
+    private void setupSeekBarListeners() {
+        seekBarStart.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser && videoPlayerManager != null && videoPlayerManager.isPrepared()) {
-                    videoPlayerManager.seekTo(progress);
-                    updateTimeText(progress, videoDurationMs);
+                if (fromUser) {
+                    if (progress >= cutEndMs) {
+                        progress = cutEndMs - 1000;
+                        seekBarStart.setProgress(progress);
+                    }
+                    cutStartMs = progress;
+                    txtStartTime.setText(formatTime(cutStartMs));
                 }
             }
             @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                isUserDragging = true;
+                if (videoPlayerManager != null && videoPlayerManager.isPlaying()) {
+                    videoPlayerManager.pause();
+                    hidePauseIcon();
+                }
+            }
             @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                isUserDragging = false;
+                playCurrentSegment();
+            }
+        });
+        
+        seekBarEnd.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser) {
+                    if (progress <= cutStartMs) {
+                        progress = cutStartMs + 1000;
+                        seekBarEnd.setProgress(progress);
+                    }
+                    cutEndMs = progress;
+                    txtEndTime.setText(formatTime(cutEndMs));
+                }
+            }
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                isUserDragging = true;
+                if (videoPlayerManager != null && videoPlayerManager.isPlaying()) {
+                    videoPlayerManager.pause();
+                    hidePauseIcon();
+                }
+            }
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                isUserDragging = false;
+                playCurrentSegment();
+            }
         });
     }
 
@@ -231,6 +294,14 @@ public class MainActivity extends AppCompatActivity {
         int minutes = seconds / 60;
         seconds = seconds % 60;
         return String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds);
+    }
+
+    private void playCurrentSegment() {
+        if (videoPlayerManager != null && videoPlayerManager.isPrepared()) {
+            videoPlayerManager.seekTo(cutStartMs);
+            videoPlayerManager.start();
+            hidePauseIcon();
+        }
     }
 
     private void setupListeners() {

@@ -1,45 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <RelativeLayout
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
         android:background="#000000">
 
-        <FrameLayout
+        <SurfaceView
+            android:id="@+id/surfaceView"
             android:layout_width="match_parent"
-            android:layout_height="match_parent">
+            android:layout_height="match_parent" />
 
-            <SurfaceView
-                android:id="@+id/surfaceView"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_gravity="center" />
+        <ImageView
+            android:id="@+id/pauseIcon"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:src="@drawable/ic_video"
+            android:alpha="0.4"
+            android:visibility="gone"
+            android:layout_gravity="center" />
+    </FrameLayout>
 
-            <ImageView
-                android:id="@+id/pauseIcon"
-                android:layout_width="60dp"
-                android:layout_height="60dp"
-                android:src="@drawable/ic_video"
-                android:alpha="0.5"
-                android:visibility="gone"
-                android:layout_gravity="center" />
-        </FrameLayout>
-    </RelativeLayout>
+    <!-- 起点滑块 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="起点"
+        android:textSize="12sp"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="8dp"/>
 
     <SeekBar
-        android:id="@+id/seekBar"
+        android:id="@+id/seekBarStart"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"/>
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp" />
+
+    <!-- 终点滑块 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="终点"
+        android:textSize="12sp"
+        android:layout_marginStart="8dp"/>
+
+    <SeekBar
+        android:id="@+id/seekBarEnd"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center"
         android:padding="8dp">
 
         <TextView
@@ -47,99 +65,67 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="00:00"
-            android:textSize="14sp"
-            android:textColor="#666666"/>
+            android:textSize="14sp" />
 
         <TextView
             android:id="@+id/txtCurrentTime"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:text="00:00"
             android:textSize="14sp"
-            android:textColor="#2196F3"
-            android:layout_marginStart="12dp"
-            android:layout_marginEnd="12dp"/>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text=" / "
-            android:textSize="14sp"
-            android:textColor="#999999"/>
+            android:gravity="center_horizontal" />
 
         <TextView
             android:id="@+id/txtEndTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="05:30"
-            android:textSize="14sp"
-            android:textColor="#666666"/>
+            android:text="00:00"
+            android:textSize="14sp" />
     </LinearLayout>
 
-    <ScrollView
+    <Button
+        android:id="@+id/btnSelectVideo"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:text="📁 选择视频"
+        android:layout_margin="8dp" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_margin="8dp">
+
+        <Button
+            android:id="@+id/btnExtractAudio"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="8dp">
+            android:layout_weight="1"
+            android:text="🎵 提取音频"
+            android:layout_marginEnd="4dp" />
 
-            <Button
-                android:id="@+id/btnSelectVideo"
-                android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:layout_marginBottom="8dp"
-                android:text="📁 选择视频"
-                android:textSize="16sp"
-                android:backgroundTint="#2196F3"/>
+        <Button
+            android:id="@+id/btnExtractMP3"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="🎤 提取 MP3"
+            android:layout_marginStart="4dp" />
+    </LinearLayout>
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
-
-                <Button
-                    android:id="@+id/btnExtractAudio"
-                    android:layout_width="0dp"
-                    android:layout_height="56dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="4dp"
-                    android:text="🎵 提取音频"
-                    android:textSize="16sp"
-                    android:backgroundTint="#4CAF50"
-                    android:enabled="false"/>
-
-                <Button
-                    android:id="@+id/btnExtractMP3"
-                    android:layout_width="0dp"
-                    android:layout_height="56dp"
-                    android:layout_weight="1"
-                    android:layout_marginStart="4dp"
-                    android:text="🎤 提取 MP3"
-                    android:textSize="16sp"
-                    android:backgroundTint="#FF9800"
-                    android:enabled="false"/>
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btnArchive"
-                android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:text="📦 归档视频"
-                android:textSize="16sp"
-                android:backgroundTint="#607D8B"
-                android:enabled="false"/>
-        </LinearLayout>
-    </ScrollView>
+    <Button
+        android:id="@+id/btnArchive"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📦 归档视频"
+        android:layout_margin="8dp" />
 
     <ProgressBar
         android:id="@+id/progressBar"
+        style="?android:attr/progressBarStyleSmall"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:visibility="gone"/>
-
+        android:visibility="gone" />
 </LinearLayout>

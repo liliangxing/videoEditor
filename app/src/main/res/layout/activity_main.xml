@@ -9,27 +9,25 @@
         android:layout_weight="1"
         android:background="#000000">
 
-        <SurfaceView
-            android:id="@+id/surfaceView"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_centerInParent="true" />
+            android:layout_height="match_parent">
 
-        <ImageView
-            android:id="@+id/videoPreviewImg"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="centerCrop"
-            android:src="@drawable/ic_video"/>
+            <SurfaceView
+                android:id="@+id/surfaceView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_gravity="center" />
 
-        <ImageView
-            android:id="@+id/pauseIcon"
-            android:layout_width="60dp"
-            android:layout_height="60dp"
-            android:src="@drawable/ic_video"
-            android:alpha="0.5"
-            android:visibility="gone"
-            android:layout_centerInParent="true" />
+            <ImageView
+                android:id="@+id/pauseIcon"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:src="@drawable/ic_video"
+                android:alpha="0.5"
+                android:visibility="gone"
+                android:layout_gravity="center" />
+        </FrameLayout>
     </RelativeLayout>
 
     <SeekBar
@@ -53,6 +51,16 @@
             android:textColor="#666666"/>
 
         <TextView
+            android:id="@+id/txtCurrentTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="00:00"
+            android:textSize="14sp"
+            android:textColor="#2196F3"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"/>
+
+        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text=" / "
@@ -63,7 +71,7 @@
             android:id="@+id/txtEndTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="00:00"
+            android:text="05:30"
             android:textSize="14sp"
             android:textColor="#666666"/>
     </LinearLayout>
@@ -72,95 +80,59 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-        <GridLayout
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:columnCount="2"
+            android:orientation="vertical"
             android:padding="8dp">
 
             <Button
                 android:id="@+id/btnSelectVideo"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_columnWeight="1"
-                android:layout_margin="4dp"
+                android:layout_marginBottom="8dp"
                 android:text="📁 选择视频"
                 android:textSize="16sp"
                 android:backgroundTint="#2196F3"/>
 
-            <Button
-                android:id="@+id/btnPlay"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_columnWeight="1"
-                android:layout_margin="4dp"
-                android:text="▶ 播放"
-                android:textSize="16sp"
-                android:backgroundTint="#2196F3"/>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
 
-            <Button
-                android:id="@+id/btnSetStart"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_columnWeight="1"
-                android:layout_margin="4dp"
-                android:text="⏱ 设起点"
-                android:textSize="16sp"
-                android:backgroundTint="#FF9800"/>
+                <Button
+                    android:id="@+id/btnExtractAudio"
+                    android:layout_width="0dp"
+                    android:layout_height="56dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="🎵 提取音频"
+                    android:textSize="16sp"
+                    android:backgroundTint="#4CAF50"
+                    android:enabled="false"/>
 
-            <Button
-                android:id="@+id/btnSetEnd"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_columnWeight="1"
-                android:layout_margin="4dp"
-                android:text="⏱ 设终点"
-                android:textSize="16sp"
-                android:backgroundTint="#FF9800"/>
-
-            <Button
-                android:id="@+id/btnCutVideo"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_columnWeight="1"
-                android:layout_margin="4dp"
-                android:text="✂ 切割视频"
-                android:textSize="16sp"
-                android:backgroundTint="#9C27B0"
-                android:enabled="false"/>
-
-            <Button
-                android:id="@+id/btnExtractAudio"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_columnWeight="1"
-                android:layout_margin="4dp"
-                android:text="🎵 提取 AAC"
-                android:textSize="16sp"
-                android:backgroundTint="#4CAF50"
-                android:enabled="false"/>
-
-            <Button
-                android:id="@+id/btnExtractMP3"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_columnWeight="1"
-                android:layout_margin="4dp"
-                android:text="🎤 提取 MP3"
-                android:textSize="16sp"
-                android:backgroundTint="#FF9800"
-                android:enabled="false"/>
+                <Button
+                    android:id="@+id/btnExtractMP3"
+                    android:layout_width="0dp"
+                    android:layout_height="56dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:text="🎤 提取 MP3"
+                    android:textSize="16sp"
+                    android:backgroundTint="#FF9800"
+                    android:enabled="false"/>
+            </LinearLayout>
 
             <Button
                 android:id="@+id/btnArchive"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:layout_columnWeight="1"
-                android:layout_margin="4dp"
-                android:text="归档视频"
+                android:text="📦 归档视频"
                 android:textSize="16sp"
-                android:backgroundTint="#607D8B"/>
-        </GridLayout>
+                android:backgroundTint="#607D8B"
+                android:enabled="false"/>
+        </LinearLayout>
     </ScrollView>
 
     <ProgressBar

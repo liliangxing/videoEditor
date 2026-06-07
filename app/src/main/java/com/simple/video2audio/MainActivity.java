@@ -53,20 +53,18 @@ public class MainActivity extends AppCompatActivity {
     
     private static final String TAG = "VideoToAudio";
     
-    private ImageView videoPreviewImg, pauseIcon;
+    private ImageView pauseIcon;
     private SurfaceView surfaceView;
     private SeekBar seekBar;
-    private TextView txtStartTime, txtEndTime;
+    private TextView txtStartTime, txtCurrentTime, txtEndTime;
     private ProgressBar progressBar;
-    private Button btnPlay, btnSetStart, btnSetEnd, btnSelectVideo, btnCutVideo, btnExtractAudio, btnExtractMP3, btnArchive;
+    private Button btnSelectVideo, btnExtractAudio, btnExtractMP3, btnArchive;
     
     private VideoPlayerManager videoPlayerManager;
     private String currentVideoPath = null;
     private File tempVideoFile = null;
     private File logFile;
     
-    private int cutStartMs = 0;
-    private int cutEndMs = 0;
     private int videoDurationMs = 0;
 
     @Override
@@ -113,24 +111,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void initViews() {
-        videoPreviewImg = findViewById(R.id.videoPreviewImg);
         pauseIcon = findViewById(R.id.pauseIcon);
         surfaceView = findViewById(R.id.surfaceView);
         seekBar = findViewById(R.id.seekBar);
         txtStartTime = findViewById(R.id.txtStartTime);
+        txtCurrentTime = findViewById(R.id.txtCurrentTime);
         txtEndTime = findViewById(R.id.txtEndTime);
         progressBar = findViewById(R.id.progressBar);
-        btnPlay = findViewById(R.id.btnPlay);
-        btnSetStart = findViewById(R.id.btnSetStart);
-        btnSetEnd = findViewById(R.id.btnSetEnd);
         btnSelectVideo = findViewById(R.id.btnSelectVideo);
-        btnCutVideo = findViewById(R.id.btnCutVideo);
         btnExtractAudio = findViewById(R.id.btnExtractAudio);
         btnExtractMP3 = findViewById(R.id.btnExtractMP3);
         btnArchive = findViewById(R.id.btnArchive);
         
-        btnPlay.setEnabled(false);
-        btnCutVideo.setEnabled(false);
         btnExtractAudio.setEnabled(false);
         btnExtractMP3.setEnabled(false);
         btnArchive.setEnabled(false);
@@ -139,17 +131,14 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void surfaceCreated(SurfaceHolder holder) {
                 if (videoPlayerManager == null) {
-                    videoPlayerManager = new VideoPlayerManager(MainActivity.this, surfaceView, videoPreviewImg, new VideoPlayerManager.OnPlaybackListener() {
+                    videoPlayerManager = new VideoPlayerManager(MainActivity.this, surfaceView, pauseIcon, new VideoPlayerManager.OnPlaybackListener() {
                         @Override
                         public void onPrepared(int duration) {
                             runOnUiThread(() -> {
                                 videoDurationMs = duration;
-                                cutEndMs = duration;
                                 seekBar.setMax(duration);
                                 updateTimeText(0, duration);
-                                btnPlay.setText("⏸ 暂停");
                                 hidePauseIcon();
-                                videoPreviewImg.setVisibility(View.GONE);
                                 
                                 int videoWidth = videoPlayerManager.getVideoWidth();
                                 int videoHeight = videoPlayerManager.getVideoHeight();
@@ -176,7 +165,7 @@ public class MainActivity extends AppCompatActivity {
                         public void onCompletion() {
                             runOnUiThread(() -> {
                                 seekBar.setProgress(0);
-                                btnPlay.setText("▶ 播放");
+                                hidePauseIcon();
                                 Toast.makeText(MainActivity.this, "播放完成", Toast.LENGTH_SHORT).show();
                             });
                         }
@@ -208,11 +197,9 @@ public class MainActivity extends AppCompatActivity {
             if (videoPlayerManager != null && videoPlayerManager.isPrepared()) {
                 if (videoPlayerManager.isPlaying()) {
                     videoPlayerManager.pause();
-                    btnPlay.setText("▶ 播放");
                     showPauseIcon();
                 } else {
                     videoPlayerManager.start();
-                    btnPlay.setText("⏸ 暂停");
                     hidePauseIcon();
                 }
             }
@@ -235,6 +222,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void updateTimeText(int currentPosition, int duration) {
         txtStartTime.setText(formatTime(currentPosition));
+        txtCurrentTime.setText(formatTime(currentPosition));
         txtEndTime.setText(formatTime(duration));
     }
 
@@ -250,41 +238,6 @@ public class MainActivity extends AppCompatActivity {
             if (checkStoragePermission()) pickVideo();
         });
         
-        btnPlay.setOnClickListener(v -> {
-            if (videoPlayerManager.isPlaying()) {
-                videoPlayerManager.pause();
-                btnPlay.setText("▶ 播放");
-            } else {
-                videoPlayerManager.start();
-                btnPlay.setText("⏸ 暂停");
-            }
-        });
-        
-        btnSetStart.setOnClickListener(v -> {
-            if (videoPlayerManager.isPrepared()) {
-                cutStartMs = videoPlayerManager.getCurrentPosition();
-                if (cutStartMs >= cutEndMs) {
-                    Toast.makeText(this, "起点不能大于终点", Toast.LENGTH_SHORT).show();
-                } else {
-                    txtStartTime.setText(formatTime(cutStartMs));
-                    Toast.makeText(this, "起点已设：" + formatTime(cutStartMs), Toast.LENGTH_SHORT).show();
-                }
-            }
-        });
-        
-        btnSetEnd.setOnClickListener(v -> {
-            if (videoPlayerManager.isPrepared()) {
-                cutEndMs = videoPlayerManager.getCurrentPosition();
-                if (cutEndMs <= cutStartMs) {
-                    Toast.makeText(this, "终点不能小于起点", Toast.LENGTH_SHORT).show();
-                } else {
-                    txtEndTime.setText(formatTime(cutEndMs));
-                    Toast.makeText(this, "终点已设：" + formatTime(cutEndMs), Toast.LENGTH_SHORT).show();
-                }
-            }
-        });
-        
-        btnCutVideo.setOnClickListener(v -> executeCutVideo());
         btnExtractAudio.setOnClickListener(v -> extractAudio("m4a", "audio/mp4", "AAC"));
         btnExtractMP3.setOnClickListener(v -> extractAudio("mp3", "audio/mpeg", "MP3"));
         btnArchive.setOnClickListener(v -> archiveVideos());
@@ -307,8 +260,6 @@ public class MainActivity extends AppCompatActivity {
                                 writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B");
                                 currentVideoPath = tempVideoFile.getAbsolutePath();
                                 runOnUiThread(() -> {
-                                    videoPreviewImg.setVisibility(View.VISIBLE);
-                                    btnCutVideo.setEnabled(true);
                                     btnExtractAudio.setEnabled(true);
                                     btnExtractMP3.setEnabled(true);
                                     btnArchive.setEnabled(true);
@@ -322,7 +273,7 @@ public class MainActivity extends AppCompatActivity {
                                 });
                             }
                         } catch (Exception e) {
-                            writeLog("❌ 异常:" + e.getMessage());
+                            writeLog("❌ 异常：" + e.getMessage());
                             runOnUiThread(() -> showErrorDialog("错误", e.getMessage()));
                         }
                     }).start();
@@ -363,75 +314,13 @@ public class MainActivity extends AppCompatActivity {
             .setTitle("需要权限")
             .setMessage("Android 11+ 需要打开「所有文件访问权限」\n\n请在设置页面打开开关。")
             .setPositiveButton("去设置", (d, w) -> {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
                 intent.setData(Uri.parse("package:" + getPackageName()));
                 startActivity(intent);
             })
             .setNegativeButton("取消", null)
             .setCancelable(false)
             .show();
-    }
-
-    private void executeCutVideo() {
-        if (currentVideoPath == null || cutStartMs >= cutEndMs) {
-            showErrorDialog("错误", "请先设置有效的切割范围");
-            return;
-        }
-        
-        writeLog("===开始切割视频===");
-        writeLog("源文件：" + currentVideoPath);
-        writeLog("切割范围：" + formatTime(cutStartMs) + " - " + formatTime(cutEndMs));
-        
-        progressBar.setVisibility(ProgressBar.VISIBLE);
-        enableButtons(false);
-        
-        File outputDir = new File(getCacheDir(), "cut_video");
-        if (!outputDir.exists()) outputDir.mkdirs();
-        
-        long timestamp = System.currentTimeMillis();
-        String outputPath = outputDir.getAbsolutePath() + "/cut_" + timestamp + ".mp4";
-        
-        double startSec = cutStartMs / 1000.0;
-        double endSec = cutEndMs / 1000.0;
-        
-        String cmd = "-y -i " + quotePath(currentVideoPath) + 
-                     " -ss " + startSec + 
-                     " -to " + endSec + 
-                     " -c copy " + 
-                     quotePath(outputPath);
-        
-        writeLog("FFmpeg 命令：" + cmd);
-        
-        final long startTime = System.currentTimeMillis();
-        FFmpegSession session = FFmpegKit.executeAsync(cmd, completedSession -> {
-            ReturnCode returnCode = completedSession.getReturnCode();
-            String output = completedSession.getOutput();
-            long duration = System.currentTimeMillis() - startTime;
-            
-            if (ReturnCode.isSuccess(returnCode)) {
-                File outputFile = new File(outputPath);
-                writeLog("✅ 切割成功，耗时：" + duration + "ms, 文件大小：" + outputFile.length() + "B");
-                
-                saveToPublicVideo(outputFile, "cut_" + timestamp + ".mp4", "video/mp4");
-                
-                runOnUiThread(() -> {
-                    progressBar.setVisibility(ProgressBar.GONE);
-                    enableButtons(true);
-                    Toast.makeText(this, "视频切割成功！", Toast.LENGTH_SHORT).show();
-                    showSuccessDialog("已保存：cut_" + timestamp + ".mp4");
-                });
-            } else {
-                writeLog("❌ 切割失败，耗时：" + duration + "ms");
-                writeLog("错误详情：" + output);
-                
-                runOnUiThread(() -> {
-                    progressBar.setVisibility(ProgressBar.GONE);
-                    enableButtons(true);
-                    Toast.makeText(this, "失败：" + output, Toast.LENGTH_LONG).show();
-                    showErrorDialog("切割失败", output);
-                });
-            }
-        });
     }
 
     private void extractAudio(String format, String mimeType, String formatName) {
@@ -498,10 +387,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void enableButtons(boolean enabled) {
-        btnPlay.setEnabled(enabled && videoPlayerManager != null);
-        btnSetStart.setEnabled(enabled && videoPlayerManager != null);
-        btnSetEnd.setEnabled(enabled && videoPlayerManager != null);
-        btnCutVideo.setEnabled(enabled && currentVideoPath != null);
         btnExtractAudio.setEnabled(enabled && currentVideoPath != null);
         btnExtractMP3.setEnabled(enabled && currentVideoPath != null);
         btnArchive.setEnabled(enabled && currentVideoPath != null);
@@ -512,36 +397,6 @@ public class MainActivity extends AppCompatActivity {
             return "\"" + path + "\"";
         }
         return path;
-    }
-
-    private void saveToPublicVideo(File sourceFile, String fileName, String mimeType) {
-        try {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.Video.Media.DISPLAY_NAME, fileName);
-            values.put(MediaStore.Video.Media.MIME_TYPE, mimeType);
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES);
-            }
-            
-            Uri collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
-            Uri itemUri = getContentResolver().insert(collection, values);
-            
-            if (itemUri != null) {
-                try (OutputStream out = getContentResolver().openOutputStream(itemUri);
-                     FileInputStream in = new FileInputStream(sourceFile)) {
-                    byte[] buffer = new byte[8192];
-                    int len;
-                    while ((len = in.read(buffer)) > 0) {
-                        out.write(buffer, 0, len);
-                    }
-                }
-                writeLog("✓ 已保存到 Movies: " + fileName);
-            }
-        } catch (Exception e) {
-            writeLog("✗ 保存失败：" + e.getMessage());
-            e.printStackTrace();
-        }
     }
 
     private void saveToPublicMusic(File sourceFile, String fileName, String mimeType) {
@@ -597,7 +452,7 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         if (videoPlayerManager != null && videoPlayerManager.isPrepared() && !videoPlayerManager.isPlaying()) {
             videoPlayerManager.start();
-            btnPlay.setText("⏸ 暂停");
+            hidePauseIcon();
         }
     }
 
@@ -606,7 +461,7 @@ public class MainActivity extends AppCompatActivity {
         super.onPause();
         if (videoPlayerManager != null && videoPlayerManager.isPlaying()) {
             videoPlayerManager.pause();
-            btnPlay.setText("▶ 播放");
+            showPauseIcon();
         }
     }
 
@@ -671,7 +526,7 @@ public class MainActivity extends AppCompatActivity {
                 
                 addFilesToZip(filesToArchive, zipFile);
                 
-                File finalZip = saveToPublicDocuments(zipFile, zipFileName, "application/zip");
+                saveToPublicDocuments(zipFile, zipFileName, "application/zip");
                 
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
@@ -729,7 +584,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
     
-    private File saveToPublicDocuments(File sourceFile, String fileName, String mimeType) {
+    private void saveToPublicDocuments(File sourceFile, String fileName, String mimeType) {
         try {
             ContentValues values = new ContentValues();
             values.put(MediaStore.Files.FileColumns.DISPLAY_NAME, fileName);
@@ -752,28 +607,10 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 writeLog("✓ 已保存到 Documents: " + fileName);
-                return new File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName);
             }
         } catch (Exception e) {
             writeLog("✗ 保存失败：" + e.getMessage());
             e.printStackTrace();
-        }
-        return sourceFile;
-    }
-    
-    private void deleteDir(File dir) {
-        if (dir.exists()) {
-            File[] files = dir.listFiles();
-            if (files != null) {
-                for (File file : files) {
-                    if (file.isDirectory()) {
-                        deleteDir(file);
-                    } else {
-                        file.delete();
-                    }
-                }
-            }
-            dir.delete();
         }
     }
 }

@@ -9,6 +9,7 @@ import android.widget.ImageView;
 import android.media.MediaPlayer;
 import android.os.Handler;
 import android.os.Looper;
+import java.io.File;
 
 public class VideoPlayerManager {
     private static final String TAG = "VideoPlayerManager";
@@ -107,13 +108,24 @@ public class VideoPlayerManager {
             listener.onError("视频路径无效");
             return;
         }
+        File videoFile = new File(path);
+        if (!videoFile.exists()) {
+            listener.onError("视频文件不存在: " + path);
+            return;
+        }
+        if (!videoFile.canRead()) {
+            listener.onError("视频文件不可读: " + path);
+            return;
+        }
         currentVideoPath = path;
         isPrepared = false;
         try {
             mediaPlayer.reset();
+            Log.d(TAG, "尝试加载视频: " + path + ", 大小: " + videoFile.length());
             mediaPlayer.setDataSource(path);
             mediaPlayer.prepareAsync();
         } catch (Exception e) {
+            Log.e(TAG, "加载视频失败: " + e.getMessage(), e);
             listener.onError("加载视频失败：" + e.getMessage());
         }
     }

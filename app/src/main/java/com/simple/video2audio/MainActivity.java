@@ -48,6 +48,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 import android.view.ViewGroup;
+import android.content.SharedPreferences;
+import android.provider.DocumentsContract;
 
 public class MainActivity extends AppCompatActivity {
     
@@ -324,11 +326,19 @@ public class MainActivity extends AppCompatActivity {
             registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
                 if (uri != null) {
                     writeLog("视频已选择：" + uri);
+                    // 尝试获取持久化URI权限
+                    try {
+                        final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+                        getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                        writeLog("✅ 持久化权限获取成功");
+                    } catch (SecurityException e) {
+                        writeLog("⚠️ 持久化权限获取失败: " + e.getMessage() + "，使用临时权限");
+                    }
                     new Thread(() -> {
                         try {
                             tempVideoFile = copyToCache(uri);
                             if (tempVideoFile != null && tempVideoFile.exists()) {
-                                writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B");
+                                writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B, 路径: " + tempVideoFile.getAbsolutePath());
                                 currentVideoPath = tempVideoFile.getAbsolutePath();
                                 runOnUiThread(() -> {
                                     btnExtractAudio.setEnabled(true);
@@ -345,6 +355,7 @@ public class MainActivity extends AppCompatActivity {
                             }
                         } catch (Exception e) {
                             writeLog("❌ 异常：" + e.getMessage());
+                            e.printStackTrace();
                             runOnUiThread(() -> showErrorDialog("错误", e.getMessage()));
                         }
                     }).start();
@@ -352,15 +363,45 @@ public class MainActivity extends AppCompatActivity {
             });
 
     private File copyToCache(Uri uri) throws Exception {
-        File f = File.createTempFile("video_", ".mp4", getCacheDir());
-        try (InputStream in = getContentResolver().openInputStream(uri);
-             FileOutputStream out = new FileOutputStream(f)) {
-            if (in == null) { f.delete(); return null; }
-            byte[] b = new byte[4096]; int n;
-            while ((n = in.read(b)) != -1) out.write(b, 0, n);
-            out.flush();
-            return f.exists() && f.canRead() && f.length() > 0 ? f : null;
+        File cacheDir = getCacheDir();
+        if (cacheDir == null) {
+            throw new Exception("无法访问缓存目录");
         }
+        writeLog("缓存目录: " + cacheDir.getAbsolutePath());
+        
+        File f = File.createTempFile("video_", ".mp4", cacheDir);
+        writeLog("临时文件: " + f.getAbsolutePath());
+        
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) { 
+                f.delete(); 
+                throw new Exception("无法打开输入流"); 
+            }
+            try (FileOutputStream out = new FileOutputStream(f)) {
+                byte[] b = new byte[8192];
+                int n;
+                long total = 0;
+                while ((n = in.read(b)) != -1) {
+                    out.write(b, 0, n);
+                    total += n;
+                    if (total % (10 * 1024 * 1024) == 0) {
+                        writeLog("已复制: " + (total / 1024 / 1024) + "MB");
+                    }
+                }
+                out.flush();
+            }
+        }
+        
+        boolean readable = f.canRead();
+        long size = f.length();
+        writeLog("文件大小: " + size + "B, 可读: " + readable);
+        
+        if (!readable || size <= 0) {
+            f.delete();
+            throw new Exception("缓存文件无效");
+        }
+        
+        return f;
     }
 
     private boolean checkStoragePermission() {

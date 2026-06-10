@@ -105,28 +105,39 @@ public class VideoPlayerManager {
 
     public void loadVideo(String path) {
         if (path == null || path.isEmpty()) {
-            listener.onError("视频路径无效");
+            Log.e(TAG, "视频路径无效: null or empty");
+            if (listener != null) listener.onError("视频路径无效");
             return;
         }
-        File videoFile = new File(path);
+        String cleanPath = path.trim();
+        File videoFile = new File(cleanPath);
+        
+        Log.d(TAG, "尝试加载视频: " + cleanPath);
+        
         if (!videoFile.exists()) {
-            listener.onError("视频文件不存在: " + path);
+            Log.e(TAG, "视频文件不存在: " + cleanPath);
+            if (listener != null) listener.onError("视频文件不存在: " + cleanPath);
             return;
         }
         if (!videoFile.canRead()) {
-            listener.onError("视频文件不可读: " + path);
+            Log.e(TAG, "视频文件不可读: " + cleanPath);
+            if (listener != null) listener.onError("视频文件不可读: " + cleanPath);
             return;
         }
-        currentVideoPath = path;
+        
+        Log.d(TAG, "文件存在且可读，大小: " + videoFile.length());
+        
+        currentVideoPath = cleanPath;
         isPrepared = false;
+        
         try {
             mediaPlayer.reset();
-            Log.d(TAG, "尝试加载视频: " + path + ", 大小: " + videoFile.length());
-            mediaPlayer.setDataSource(path);
+            mediaPlayer.setDataSource(cleanPath);
+            Log.d(TAG, "setDataSource成功，准备异步加载");
             mediaPlayer.prepareAsync();
         } catch (Exception e) {
             Log.e(TAG, "加载视频失败: " + e.getMessage(), e);
-            listener.onError("加载视频失败：" + e.getMessage());
+            if (listener != null) listener.onError("加载视频失败：" + e.getMessage());
         }
     }
 

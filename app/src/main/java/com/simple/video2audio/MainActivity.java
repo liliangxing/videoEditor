@@ -145,26 +145,36 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void onPrepared(int duration) {
                             runOnUiThread(() -> {
-                                videoDurationMs = duration;
-                                seekBar.setMax(duration);
-                                seekBarStart.setMax(duration);
-                                seekBarEnd.setMax(duration);
-                                seekBarStart.setProgress(0);
-                                seekBarEnd.setProgress(duration);
-                                cutStartMs = 0;
-                                cutEndMs = duration;
-                                updateTimeText(0, duration);
-                                hidePauseIcon();
-                                
-                                int videoWidth = videoPlayerManager.getVideoWidth();
-                                int videoHeight = videoPlayerManager.getVideoHeight();
-                                if (videoWidth > 0 && videoHeight > 0) {
-                                    float aspectRatio = (float) videoWidth / videoHeight;
-                                    int surfaceWidth = surfaceView.getWidth();
-                                    int newHeight = (int) (surfaceWidth / aspectRatio);
-                                    ViewGroup.LayoutParams params = surfaceView.getLayoutParams();
-                                    params.height = newHeight;
-                                    surfaceView.setLayoutParams(params);
+                                if (isFinishing() || isDestroyed()) {
+                                    writeLog("⚠️ onPrepared: Activity已销毁");
+                                    return;
+                                }
+                                try {
+                                    videoDurationMs = duration;
+                                    seekBar.setMax(duration);
+                                    seekBarStart.setMax(duration);
+                                    seekBarEnd.setMax(duration);
+                                    seekBarStart.setProgress(0);
+                                    seekBarEnd.setProgress(duration);
+                                    cutStartMs = 0;
+                                    cutEndMs = duration;
+                                    updateTimeText(0, duration);
+                                    hidePauseIcon();
+                                    
+                                    int videoWidth = videoPlayerManager.getVideoWidth();
+                                    int videoHeight = videoPlayerManager.getVideoHeight();
+                                    if (videoWidth > 0 && videoHeight > 0) {
+                                        float aspectRatio = (float) videoWidth / videoHeight;
+                                        int surfaceWidth = surfaceView.getWidth();
+                                        int newHeight = (int) (surfaceWidth / aspectRatio);
+                                        ViewGroup.LayoutParams params = surfaceView.getLayoutParams();
+                                        params.height = newHeight;
+                                        surfaceView.setLayoutParams(params);
+                                    }
+                                    writeLog("✅ 视频已准备好，时长: " + duration + "ms");
+                                } catch (Exception e) {
+                                    writeLog("❌ onPrepared异常: " + e.getMessage());
+                                    e.printStackTrace();
                                 }
                             });
                         }
@@ -172,14 +182,19 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void onProgressUpdate(int currentPosition, int duration) {
                             runOnUiThread(() -> {
-                                if (!isUserDragging) {
-                                    seekBar.setProgress(currentPosition);
-                                }
-                                
-                                txtCurrentTime.setText(formatTime(currentPosition));
-                                
-                                if (currentPosition >= cutEndMs) {
-                                    videoPlayerManager.seekTo(cutStartMs);
+                                if (isFinishing() || isDestroyed()) return;
+                                try {
+                                    if (!isUserDragging) {
+                                        seekBar.setProgress(currentPosition);
+                                    }
+                                    
+                                    txtCurrentTime.setText(formatTime(currentPosition));
+                                    
+                                    if (currentPosition >= cutEndMs && videoPlayerManager != null) {
+                                        videoPlayerManager.seekTo(cutStartMs);
+                                    }
+                                } catch (Exception e) {
+                                    Log.e(TAG, "onProgressUpdate异常: " + e.getMessage());
                                 }
                             });
                         }
@@ -187,23 +202,33 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void onCompletion() {
                             runOnUiThread(() -> {
-                                seekBar.setProgress(0);
-                                hidePauseIcon();
-                                Toast.makeText(MainActivity.this, "播放完成", Toast.LENGTH_SHORT).show();
+                                if (isFinishing() || isDestroyed()) return;
+                                try {
+                                    seekBar.setProgress(0);
+                                    hidePauseIcon();
+                                    Toast.makeText(MainActivity.this, "播放完成", Toast.LENGTH_SHORT).show();
+                                } catch (Exception e) {
+                                    Log.e(TAG, "onCompletion异常: " + e.getMessage());
+                                }
                             });
                         }
 
                         @Override
                         public void onError(String error) {
                             runOnUiThread(() -> {
-                                Toast.makeText(MainActivity.this, "播放错误：" + error, Toast.LENGTH_LONG).show();
-                                Log.e("VideoEditor", error);
+                                if (isFinishing() || isDestroyed()) return;
+                                try {
+                                    Toast.makeText(MainActivity.this, "播放错误：" + error, Toast.LENGTH_LONG).show();
+                                    Log.e("VideoEditor", error);
+                                } catch (Exception e) {
+                                    Log.e(TAG, "onError显示异常: " + e.getMessage());
+                                }
                             });
                         }
                     });
                     writeLog("VideoPlayerManager 已初始化");
                     
-                    if (currentVideoPath != null) {
+                    if (currentVideoPath != null && !isFinishing() && !isDestroyed()) {
                         videoPlayerManager.loadVideo(currentVideoPath);
                     }
                 }
@@ -213,7 +238,11 @@ public class MainActivity extends AppCompatActivity {
             public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
 
             @Override
-            public void surfaceDestroyed(SurfaceHolder holder) {}
+            public void surfaceDestroyed(SurfaceHolder holder) {
+                if (videoPlayerManager != null) {
+                    videoPlayerManager.release();
+                }
+            }
         });
         
         surfaceView.setOnClickListener(v -> {
@@ -338,25 +367,45 @@ public class MainActivity extends AppCompatActivity {
                         try {
                             tempVideoFile = copyToCache(uri);
                             if (tempVideoFile != null && tempVideoFile.exists()) {
-                                writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B, 路径: " + tempVideoFile.getAbsolutePath());
-                                currentVideoPath = tempVideoFile.getAbsolutePath();
+                                String cachedPath = tempVideoFile.getAbsolutePath().trim();
+                                writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B, 路径: " + cachedPath);
+                                currentVideoPath = cachedPath;
                                 runOnUiThread(() -> {
-                                    btnExtractAudio.setEnabled(true);
-                                    btnExtractMP3.setEnabled(true);
-                                    btnArchive.setEnabled(true);
-                                    if (videoPlayerManager != null) {
-                                        videoPlayerManager.loadVideo(currentVideoPath);
+                                    // 检查Activity生命周期状态
+                                    if (isFinishing() || isDestroyed()) {
+                                        writeLog("⚠️ Activity已销毁，跳过后续操作");
+                                        return;
+                                    }
+                                    writeLog("=== 缓存回调开始 === isFinishing=" + isFinishing() + ", isDestroyed=" + isDestroyed());
+                                    try {
+                                        btnExtractAudio.setEnabled(true);
+                                        btnExtractMP3.setEnabled(true);
+                                        btnArchive.setEnabled(true);
+                                        if (videoPlayerManager != null) {
+                                            writeLog("调用loadVideo，路径: [" + cachedPath + "]");
+                                            videoPlayerManager.loadVideo(cachedPath);
+                                        } else {
+                                            writeLog("⚠️ videoPlayerManager为null");
+                                        }
+                                    } catch (Exception e) {
+                                        writeLog("❌ UI操作失败: " + e.getMessage());
+                                        e.printStackTrace();
+                                        showErrorDialog("错误", "加载视频失败: " + e.getMessage());
                                     }
                                 });
                             } else {
                                 runOnUiThread(() -> {
+                                    if (isFinishing() || isDestroyed()) return;
                                     showErrorDialog("错误", "无法缓存视频文件");
                                 });
                             }
                         } catch (Exception e) {
                             writeLog("❌ 异常：" + e.getMessage());
                             e.printStackTrace();
-                            runOnUiThread(() -> showErrorDialog("错误", e.getMessage()));
+                            runOnUiThread(() -> {
+                                if (isFinishing() || isDestroyed()) return;
+                                showErrorDialog("错误", e.getMessage());
+                            });
                         }
                     }).start();
                 }

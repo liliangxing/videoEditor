@@ -652,8 +652,12 @@ public class MainActivity extends AppCompatActivity {
     }
     
     private void archiveVideos() {
-        if (currentVideoPath == null) {
-            showErrorDialog("错误", "请先选择视频");
+        File cutVideoDir = new File(getCacheDir(), "cut_video");
+        File audioDir = new File(getCacheDir(), "audio");
+        
+        if ((!cutVideoDir.exists() || cutVideoDir.listFiles().length == 0) 
+            && (!audioDir.exists() || audioDir.listFiles().length == 0)) {
+            showErrorDialog("错误", "没有可归档的文件，请先切割视频或提取音频");
             return;
         }
         
@@ -673,16 +677,17 @@ public class MainActivity extends AppCompatActivity {
                 File zipFile = new File(archiveDir, zipFileName);
                 
                 List<File> filesToArchive = new ArrayList<>();
-                filesToArchive.add(new File(currentVideoPath));
                 
-                File cutVideoDir = new File(getCacheDir(), "cut_video");
                 if (cutVideoDir.exists()) {
                     addDirToZip(cutVideoDir, filesToArchive);
                 }
                 
-                File audioDir = new File(getCacheDir(), "audio");
                 if (audioDir.exists()) {
                     addDirToZip(audioDir, filesToArchive);
+                }
+                
+                if (filesToArchive.isEmpty()) {
+                    throw new Exception("没有找到可归档的文件");
                 }
                 
                 addFilesToZip(filesToArchive, zipFile);
@@ -696,9 +701,9 @@ public class MainActivity extends AppCompatActivity {
                     showSuccessDialog("已保存到 Documents 目录：" + zipFileName);
                 });
                 
-                writeLog("✅ 归档成功：" + zipFile.length() + "B, 文件数：" + getZipFileCount(zipFile));
+                writeLog("归档成功：" + zipFile.length() + "B, 文件数：" + getZipFileCount(zipFile));
             } catch (Exception e) {
-                writeLog("❌ 归档失败：" + e.getMessage());
+                writeLog("归档失败：" + e.getMessage());
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
                     enableButtons(true);

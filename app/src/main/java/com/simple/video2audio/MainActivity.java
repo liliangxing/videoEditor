@@ -387,6 +387,12 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         
+        // 检查存储权限
+        if (!checkStoragePermission()) {
+            showErrorDialog("需要权限", "请授权所有文件访问权限后重试");
+            return;
+        }
+        
         // 延迟初始化 FFmpeg，到用户点击提取按钮时再初始化
         if (!ffmpegReady) {
             writeLog("正在初始化 FFmpeg...");
@@ -573,8 +579,9 @@ public class MainActivity extends AppCompatActivity {
     }
     
     private void archiveVideos() {
-        if (currentVideoPath == null) {
-            showErrorDialog("错误", "请先选择视频");
+        // 检查存储权限
+        if (!checkStoragePermission()) {
+            showErrorDialog("需要权限", "请授权所有文件访问权限后重试");
             return;
         }
         

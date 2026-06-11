@@ -356,14 +356,26 @@ public class MainActivity extends AppCompatActivity {
             registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
                 if (uri != null) {
                     writeLog("视频已选择：" + uri);
-                    // 尝试获取持久化URI权限
-                    try {
-                        final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
-                        getContentResolver().takePersistableUriPermission(uri, takeFlags);
-                        writeLog("✅ 持久化权限获取成功");
-                    } catch (SecurityException e) {
-                        writeLog("⚠️ 持久化权限获取失败: " + e.getMessage() + "，使用临时权限");
+                    
+                    // 判断 URI 类型，决定是否申请持久化权限
+                    String authority = uri.getAuthority();
+                    boolean isPicker = authority != null && authority.contains("picker");
+                    boolean isMediaStore = authority != null && authority.equals("media");
+                    boolean isDocumentProvider = authority != null && (authority.contains("document") || authority.contains("storage"));
+                    
+                    // 只有 DocumentProvider 才尝试获取持久化权限
+                    if (isDocumentProvider) {
+                        try {
+                            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+                            getContentResolver().takePersistableUriPermission(uri, takeFlags);
+                            writeLog("✅ 持久化权限获取成功");
+                        } catch (SecurityException e) {
+                            writeLog("⚠️ 持久化权限获取失败: " + e.getMessage() + "，将复制文件到缓存");
+                        }
+                    } else {
+                        writeLog("📋 URI类型: " + (isPicker ? "Photo Picker" : isMediaStore ? "MediaStore" : "其他") + "，直接复制到缓存");
                     }
+                    
                     new Thread(() -> {
                         try {
                             tempVideoFile = copyToCache(uri);

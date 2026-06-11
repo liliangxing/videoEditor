@@ -70,6 +70,8 @@ public class MainActivity extends AppCompatActivity {
     private int cutEndMs = 0;
     private int videoDurationMs = 0;
     private boolean isUserDragging = false;
+    private boolean ffmpegReady = false;
+    private FFmpegSession ffmpegInitSession;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,21 +81,6 @@ public class MainActivity extends AppCompatActivity {
         initLogFile();
         initViews();
         setupListeners();
-        
-        new Handler().postDelayed(() -> {
-            try {
-                FFmpegSession session = FFmpegKit.executeAsync("-version", completedSession -> {
-                    ReturnCode returnCode = completedSession.getReturnCode();
-                    if (ReturnCode.isSuccess(returnCode)) {
-                        writeLog("✅ FFmpegKit 测试成功");
-                    } else {
-                        writeLog("❌ FFmpegKit 测试失败");
-                    }
-                });
-            } catch (Exception e) {
-                writeLog("❌ FFmpegKit 测试异常：" + e.getMessage());
-            }
-        }, 500);
     }
 
     private void initLogFile() {
@@ -398,6 +385,30 @@ public class MainActivity extends AppCompatActivity {
         if (currentVideoPath == null) {
             showErrorDialog("错误", "请先选择视频");
             return;
+        }
+        
+        // 延迟初始化 FFmpeg，到用户点击提取按钮时再初始化
+        if (!ffmpegReady) {
+            writeLog("正在初始化 FFmpeg...");
+            try {
+                FFmpegSession initSession = FFmpegKit.executeAsync("-version", completedSession -> {
+                    ReturnCode returnCode = completedSession.getReturnCode();
+                    if (ReturnCode.isSuccess(returnCode)) {
+                        ffmpegReady = true;
+                        writeLog("✅ FFmpeg 初始化成功");
+                    } else {
+                        writeLog("❌ FFmpeg 初始化失败");
+                    }
+                });
+            } catch (Exception e) {
+                writeLog("❌ FFmpeg 初始化异常：" + e.getMessage());
+                showErrorDialog("错误", "FFmpeg 初始化失败");
+                return;
+            }
+            // 等待 FFmpeg 初始化完成
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {}
         }
         
         writeLog("===开始提取 " + formatName + "==");

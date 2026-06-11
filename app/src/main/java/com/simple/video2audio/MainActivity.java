@@ -513,25 +513,36 @@ public class MainActivity extends AppCompatActivity {
         if (!audioDir.exists()) audioDir.mkdirs();
         
         long timestamp = System.currentTimeMillis();
-        String outputPath = audioDir.getAbsolutePath() + "/audio_" + timestamp + "." + format;
         
+        // 如果是 MP3 格式，先尝试使用 libmp3lame 编码器，失败则降级到 AAC
         String cmd;
         if ("mp3".equals(format)) {
-            cmd = "-y -i " + quotePath(currentVideoPath) + " -vn -ar 44100 -ac 2 -b:a 256k -f mp3 " + quotePath(outputPath);
+            // 尝试使用 libmp3lame 编码器
+            String outputPath = audioDir.getAbsolutePath() + "/audio_" + timestamp + ".mp3";
+            cmd = "-y -i " + quotePath(currentVideoPath) + " -vn -acodec libmp3lame -ar 44100 -ac 2 -b:a 256k " + quotePath(outputPath);
+            executeFFmpegExtract(cmd, format, mimeType, formatName, timestamp, audioDir, true);
         } else {
+            String outputPath = audioDir.getAbsolutePath() + "/audio_" + timestamp + ".m4a";
             cmd = "-y -i " + quotePath(currentVideoPath) + " -vn -c:a aac -b:a 192k -ar 44100 -ac 2 " + quotePath(outputPath);
+            executeFFmpegExtract(cmd, format, mimeType, formatName, timestamp, audioDir, false);
         }
-        
+    }
+    
+    private void executeFFmpegExtract(String cmd, String format, String mimeType, String formatName, 
+                                     long timestamp, File audioDir, boolean tryFallback) {
         writeLog("FFmpeg 命令：" + cmd);
         
         final long startTime = System.currentTimeMillis();
+        final String originalFormat = format;
+        final String originalFormatName = formatName;
+        
         FFmpegSession session = FFmpegKit.executeAsync(cmd, completedSession -> {
             ReturnCode returnCode = completedSession.getReturnCode();
             String output = completedSession.getOutput();
             long duration = System.currentTimeMillis() - startTime;
             
             if (ReturnCode.isSuccess(returnCode)) {
-                File audioFile = new File(outputPath);
+                File audioFile = new File(audioDir, "audio_" + timestamp + "." + format);
                 writeLog("✅ 转换成功，耗时：" + duration + "ms, 文件大小：" + audioFile.length() + "B");
                 
                 saveToPublicMusic(audioFile, "audio_" + timestamp + "." + format, mimeType);
@@ -543,6 +554,20 @@ public class MainActivity extends AppCompatActivity {
                     showSuccessDialog("已保存到 Music 目录");
                 });
             } else {
+                // 检查是否是 MP3 编码器不可用，自动降级到 AAC
+                if (tryFallback && "mp3".equals(originalFormat) && 
+                    (output.contains("encoder selection failed") || 
+                     output.contains("Encoder (codec") || 
+                     output.contains("not found") ||
+                     output.contains("disabled"))) {
+                    writeLog("⚠️ MP3 编码器不可用，尝试降级到 AAC...");
+                    
+                    String aacPath = audioDir.getAbsolutePath() + "/audio_" + timestamp + ".m4a";
+                    String aacCmd = "-y -i " + quotePath(currentVideoPath) + " -vn -c:a aac -b:a 192k -ar 44100 -ac 2 " + quotePath(aacPath);
+                    executeFFmpegExtract(aacCmd, "m4a", "audio/mp4", "AAC", timestamp, audioDir, false);
+                    return;
+                }
+                
                 writeLog("❌ 转换失败，耗时：" + duration + "ms");
                 writeLog("错误详情：" + output);
                 

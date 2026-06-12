@@ -55,7 +55,6 @@ public class MainActivity extends AppCompatActivity {
     
     private ImageView pauseIcon;
     private SurfaceView surfaceView;
-    private SeekBar seekBar;
     private SeekBar seekBarStart, seekBarEnd;
     private TextView txtStartTime, txtCurrentTime, txtEndTime;
     private ProgressBar progressBar;
@@ -70,6 +69,8 @@ public class MainActivity extends AppCompatActivity {
     private int cutEndMs = 0;
     private int videoDurationMs = 0;
     private boolean isUserDragging = false;
+    private boolean ffmpegReady = false;
+    private FFmpegSession ffmpegInitSession;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,21 +80,6 @@ public class MainActivity extends AppCompatActivity {
         initLogFile();
         initViews();
         setupListeners();
-        
-        new Handler().postDelayed(() -> {
-            try {
-                FFmpegSession session = FFmpegKit.executeAsync("-version", completedSession -> {
-                    ReturnCode returnCode = completedSession.getReturnCode();
-                    if (ReturnCode.isSuccess(returnCode)) {
-                        writeLog("✅ FFmpegKit 测试成功");
-                    } else {
-                        writeLog("❌ FFmpegKit 测试失败");
-                    }
-                });
-            } catch (Exception e) {
-                writeLog("❌ FFmpegKit 测试异常：" + e.getMessage());
-            }
-        }, 500);
     }
 
     private void initLogFile() {
@@ -117,7 +103,6 @@ public class MainActivity extends AppCompatActivity {
     private void initViews() {
         pauseIcon = findViewById(R.id.pauseIcon);
         surfaceView = findViewById(R.id.surfaceView);
-        seekBar = findViewById(R.id.seekBar);
         seekBarStart = findViewById(R.id.seekBarStart);
         seekBarEnd = findViewById(R.id.seekBarEnd);
         txtStartTime = findViewById(R.id.txtStartTime);
@@ -144,7 +129,6 @@ public class MainActivity extends AppCompatActivity {
                         public void onPrepared(int duration) {
                             runOnUiThread(() -> {
                                 videoDurationMs = duration;
-                                seekBar.setMax(duration);
                                 seekBarStart.setMax(duration);
                                 seekBarEnd.setMax(duration);
                                 seekBarStart.setProgress(0);
@@ -170,10 +154,6 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void onProgressUpdate(int currentPosition, int duration) {
                             runOnUiThread(() -> {
-                                if (!isUserDragging) {
-                                    seekBar.setProgress(currentPosition);
-                                }
-                                
                                 txtCurrentTime.setText(formatTime(currentPosition));
                                 
                                 if (currentPosition >= cutEndMs) {
@@ -185,7 +165,6 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void onCompletion() {
                             runOnUiThread(() -> {
-                                seekBar.setProgress(0);
                                 hidePauseIcon();
                                 Toast.makeText(MainActivity.this, "播放完成", Toast.LENGTH_SHORT).show();
                             });
@@ -400,6 +379,36 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         
+        // 检查存储权限
+        if (!checkStoragePermission()) {
+            showErrorDialog("需要权限", "请授权所有文件访问权限后重试");
+            return;
+        }
+        
+        // 延迟初始化 FFmpeg，到用户点击提取按钮时再初始化
+        if (!ffmpegReady) {
+            writeLog("正在初始化 FFmpeg...");
+            try {
+                FFmpegSession initSession = FFmpegKit.executeAsync("-version", completedSession -> {
+                    ReturnCode returnCode = completedSession.getReturnCode();
+                    if (ReturnCode.isSuccess(returnCode)) {
+                        ffmpegReady = true;
+                        writeLog("✅ FFmpeg 初始化成功");
+                    } else {
+                        writeLog("❌ FFmpeg 初始化失败");
+                    }
+                });
+            } catch (Exception e) {
+                writeLog("❌ FFmpeg 初始化异常：" + e.getMessage());
+                showErrorDialog("错误", "FFmpeg 初始化失败");
+                return;
+            }
+            // 等待 FFmpeg 初始化完成
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {}
+        }
+        
         writeLog("===开始提取 " + formatName + "==");
         writeLog("源文件：" + currentVideoPath);
         
@@ -562,8 +571,9 @@ public class MainActivity extends AppCompatActivity {
     }
     
     private void archiveVideos() {
-        if (currentVideoPath == null) {
-            showErrorDialog("错误", "请先选择视频");
+        // 检查存储权限
+        if (!checkStoragePermission()) {
+            showErrorDialog("需要权限", "请授权所有文件访问权限后重试");
             return;
         }
         

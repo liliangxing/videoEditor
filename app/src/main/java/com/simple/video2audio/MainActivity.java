@@ -35,6 +35,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
@@ -469,7 +470,7 @@ public class MainActivity extends AppCompatActivity {
     private void enableButtons(boolean enabled) {
         btnExtractAudio.setEnabled(enabled && currentVideoPath != null);
         btnExtractMP3.setEnabled(enabled && currentVideoPath != null);
-        btnArchive.setEnabled(enabled && currentVideoPath != null);
+        btnArchive.setEnabled(enabled);
     }
 
     private String quotePath(String path) {
@@ -577,121 +578,189 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         
-        writeLog("===开始归档视频===");
-        
-        progressBar.setVisibility(ProgressBar.VISIBLE);
-        enableButtons(false);
-        
         new Thread(() -> {
+            File sourceDir = new File(Environment.getExternalStorageDirectory(), "Music/douyinguanjia");
+            if (!sourceDir.exists() || !sourceDir.isDirectory()) {
+                runOnUiThread(() -> Toast.makeText(this, "源目录不存在", Toast.LENGTH_SHORT).show());
+                return;
+            }
+
+            File[] videoFiles = sourceDir.listFiles((dir, name) -> 
+                name.toLowerCase().endsWith(".mp4") && new File(dir, name).length() > 0);
+            if (videoFiles == null || videoFiles.length == 0) {
+                runOnUiThread(() -> Toast.makeText(this, "没有找到需要归档的 MP4 文件", Toast.LENGTH_SHORT).show());
+                return;
+            }
+
+            writeLog("===开始归档视频===");
+            writeLog("源目录: " + sourceDir.getAbsolutePath());
+            writeLog("找到 " + videoFiles.length + " 个 MP4 文件");
+
+            runOnUiThread(() -> {
+                progressBar.setVisibility(ProgressBar.VISIBLE);
+                enableButtons(false);
+                Toast.makeText(this, "开始归档 " + videoFiles.length + " 个文件，请稍候...", Toast.LENGTH_SHORT).show();
+            });
+
+            int maxPerZip = 500;
+            int currentZipIndex = 1;
+            File zipFile = new File(sourceDir.getParentFile(), "douyinguanjia" + currentZipIndex + ".zip");
+            List<File> filesToArchive = new ArrayList<>(Arrays.asList(videoFiles));
+
             try {
-                File archiveDir = new File(getExternalFilesDir(null), "archives");
-                if (!archiveDir.exists()) {
-                    archiveDir.mkdirs();
+                while (!filesToArchive.isEmpty()) {
+                    int existingCount = getZipFileCount(zipFile);
+                    if (existingCount >= maxPerZip) {
+                        currentZipIndex++;
+                        zipFile = new File(sourceDir.getParentFile(), "douyinguanjia" + currentZipIndex + ".zip");
+                        existingCount = getZipFileCount(zipFile);
+                    }
+
+                    int remainingSlots = maxPerZip - existingCount;
+                    List<File> batch = filesToArchive.subList(0, Math.min(remainingSlots, filesToArchive.size()));
+
+                    addFilesToZipWithMerge(zipFile, batch, sourceDir);
+                    batch.clear();
+                    
+                    writeLog("已归档到: " + zipFile.getName() + ", 当前数量: " + getZipFileCount(zipFile));
                 }
-                
-                String zipFileName = "archive_" + System.currentTimeMillis() + ".zip";
-                File zipFile = new File(archiveDir, zipFileName);
-                
-                List<File> filesToArchive = new ArrayList<>();
-                filesToArchive.add(new File(currentVideoPath));
-                
-                File cutVideoDir = new File(getCacheDir(), "cut_video");
-                if (cutVideoDir.exists()) {
-                    addDirToZip(cutVideoDir, filesToArchive);
+
+                for (File video : videoFiles) {
+                    if (video.exists() && video.delete()) {
+                        Log.d(TAG, "已删除: " + video.getName());
+                    }
                 }
-                
-                File audioDir = new File(getCacheDir(), "audio");
-                if (audioDir.exists()) {
-                    addDirToZip(audioDir, filesToArchive);
-                }
-                
-                addFilesToZip(filesToArchive, zipFile);
-                
-                saveToPublicDocuments(zipFile, zipFileName, "application/zip");
-                
+
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
                     enableButtons(true);
-                    Toast.makeText(this, "归档成功！共打包 " + getZipFileCount(zipFile) + " 个文件", Toast.LENGTH_SHORT).show();
-                    showSuccessDialog("已保存到 Documents 目录：" + zipFileName);
+                    Toast.makeText(this, "归档完成，原始 MP4 已删除", Toast.LENGTH_LONG).show();
                 });
-                
-                writeLog("✅ 归档成功：" + zipFile.length() + "B, 文件数：" + getZipFileCount(zipFile));
+
+                writeLog("归档完成：" + videoFiles.length + " 个文件");
             } catch (Exception e) {
-                writeLog("❌ 归档失败：" + e.getMessage());
+                Log.e(TAG, "归档失败", e);
+                writeLog("归档失败: " + e.getMessage());
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
                     enableButtons(true);
-                    Toast.makeText(this, "归档失败：" + e.getMessage(), Toast.LENGTH_LONG).show();
-                    showErrorDialog("归档失败", e.getMessage());
+                    Toast.makeText(this, "归档失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 });
             }
         }).start();
     }
     
-    private int getZipFileCount(File file) {
-        int count = 0;
-        try (ZipFile zip = new ZipFile(file)) {
-            count = zip.size();
-        } catch (Exception e) {
-            e.printStackTrace();
+    private int getZipFileCount(File zipFile) {
+        if (!zipFile.exists()) return 0;
+        try (ZipFile zf = new ZipFile(zipFile)) {
+            return zf.size();
+        } catch (IOException e) {
+            return 0;
         }
-        return count;
     }
     
-    private void addFilesToZip(List<File> files, File zipFile) throws Exception {
-        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
-            for (File file : files) {
-                if (file.exists()) {
-                    ZipEntry entry = new ZipEntry(file.getName());
-                    zos.putNextEntry(entry);
-                    try (FileInputStream fis = new FileInputStream(file)) {
-                        byte[] buffer = new byte[8192];
-                        int len;
-                        while ((len = fis.read(buffer)) > 0) {
-                            zos.write(buffer, 0, len);
+    private void addFilesToZipWithMerge(File zipFile, List<File> files, File sourceDir) throws IOException {
+        File tempDir = new File(getCacheDir(), "zip_temp");
+        deleteDir(tempDir);
+        tempDir.mkdirs();
+
+        if (zipFile.exists()) {
+            try (ZipFile existingZip = new ZipFile(zipFile)) {
+                Enumeration<? extends ZipEntry> entries = existingZip.entries();
+                while (entries.hasMoreElements()) {
+                    ZipEntry entry = entries.nextElement();
+                    File outFile = new File(tempDir, entry.getName());
+                    if (entry.isDirectory()) {
+                        outFile.mkdirs();
+                    } else {
+                        outFile.getParentFile().mkdirs();
+                        try (InputStream is = existingZip.getInputStream(entry);
+                             FileOutputStream fos = new FileOutputStream(outFile)) {
+                            byte[] buffer = new byte[8192];
+                            int len;
+                            while ((len = is.read(buffer)) != -1) {
+                                fos.write(buffer, 0, len);
+                            }
                         }
                     }
-                    zos.closeEntry();
                 }
             }
         }
-    }
-    
-    private void addDirToZip(File dir, List<File> fileList) {
-        File[] files = dir.listFiles();
-        if (files != null) {
-            fileList.addAll(Arrays.asList(files));
-        }
-    }
-    
-    private void saveToPublicDocuments(File sourceFile, String fileName, String mimeType) {
-        try {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.Files.FileColumns.DISPLAY_NAME, fileName);
-            values.put(MediaStore.Files.FileColumns.MIME_TYPE, mimeType);
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.put(MediaStore.Files.FileColumns.RELATIVE_PATH, Environment.DIRECTORY_DOCUMENTS);
+
+        for (File file : files) {
+            String desiredName = file.getName();
+            File targetFile = new File(tempDir, desiredName);
+            if (targetFile.exists()) {
+                if (targetFile.length() == file.length()) {
+                    Log.d(TAG, "跳过已存在且大小相同的文件: " + desiredName);
+                    continue;
+                }
+                int counter = 1;
+                String baseName = desiredName.substring(0, desiredName.lastIndexOf("."));
+                String extension = desiredName.substring(desiredName.lastIndexOf("."));
+                do {
+                    String newName = baseName + "(" + counter + ")" + extension;
+                    targetFile = new File(tempDir, newName);
+                    counter++;
+                } while (targetFile.exists() && counter <= 100);
             }
-            
-            Uri collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
-            Uri itemUri = getContentResolver().insert(collection, values);
-            
-            if (itemUri != null) {
-                try (OutputStream out = getContentResolver().openOutputStream(itemUri);
-                     FileInputStream in = new FileInputStream(sourceFile)) {
+            try (FileInputStream fis = new FileInputStream(file);
+                 FileOutputStream fos = new FileOutputStream(targetFile)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                while ((len = fis.read(buffer)) != -1) {
+                    fos.write(buffer, 0, len);
+                }
+            }
+        }
+
+        File newZip = new File(zipFile.getAbsolutePath() + ".tmp");
+        try (FileOutputStream fos = new FileOutputStream(newZip);
+             ZipOutputStream zos = new ZipOutputStream(fos)) {
+            addDirToZipStream(zos, tempDir, "");
+        }
+
+        if (zipFile.exists() && !zipFile.delete()) {
+            throw new IOException("无法删除旧 ZIP 文件");
+        }
+        if (!newZip.renameTo(zipFile)) {
+            throw new IOException("无法重命名临时 ZIP 文件");
+        }
+
+        deleteDir(tempDir);
+    }
+    
+    private void addDirToZipStream(ZipOutputStream zos, File dir, String parentPath) throws IOException {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isDirectory()) {
+                addDirToZipStream(zos, file, parentPath + file.getName() + "/");
+            } else {
+                String entryName = parentPath + file.getName();
+                ZipEntry zipEntry = new ZipEntry(entryName);
+                zos.putNextEntry(zipEntry);
+                try (FileInputStream fis = new FileInputStream(file)) {
                     byte[] buffer = new byte[8192];
                     int len;
-                    while ((len = in.read(buffer)) > 0) {
-                        out.write(buffer, 0, len);
+                    while ((len = fis.read(buffer)) != -1) {
+                        zos.write(buffer, 0, len);
                     }
                 }
-                writeLog("✓ 已保存到 Documents: " + fileName);
+                zos.closeEntry();
             }
-        } catch (Exception e) {
-            writeLog("✗ 保存失败：" + e.getMessage());
-            e.printStackTrace();
         }
+    }
+    
+    private void deleteDir(File dir) {
+        if (dir.isDirectory()) {
+            File[] children = dir.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteDir(child);
+                }
+            }
+        }
+        dir.delete();
     }
 }

@@ -117,6 +117,7 @@ public class MainActivity extends AppCompatActivity {
         
         btnExtractAudio.setEnabled(false);
         btnExtractMP3.setEnabled(false);
+        btnArchive.setEnabled(true);
         
         setupSeekBarListeners();
         
@@ -312,6 +313,7 @@ public class MainActivity extends AppCompatActivity {
                                 runOnUiThread(() -> {
                                     btnExtractAudio.setEnabled(true);
                                     btnExtractMP3.setEnabled(true);
+                                    btnArchive.setEnabled(true);
                                     if (videoPlayerManager != null) {
                                         videoPlayerManager.loadVideo(currentVideoPath);
                                     }
@@ -468,6 +470,7 @@ public class MainActivity extends AppCompatActivity {
     private void enableButtons(boolean enabled) {
         btnExtractAudio.setEnabled(enabled && currentVideoPath != null);
         btnExtractMP3.setEnabled(enabled && currentVideoPath != null);
+        btnArchive.setEnabled(enabled);
     }
 
     private String quotePath(String path) {
@@ -595,7 +598,7 @@ public class MainActivity extends AppCompatActivity {
 
             runOnUiThread(() -> {
                 progressBar.setVisibility(ProgressBar.VISIBLE);
-                btnArchive.setEnabled(false);
+                enableButtons(false);
                 Toast.makeText(this, "开始归档 " + videoFiles.length + " 个文件，请稍候...", Toast.LENGTH_SHORT).show();
             });
 
@@ -630,7 +633,7 @@ public class MainActivity extends AppCompatActivity {
 
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
-                    btnArchive.setEnabled(true);
+                    enableButtons(true);
                     Toast.makeText(this, "归档完成，原始 MP4 已删除", Toast.LENGTH_LONG).show();
                 });
 
@@ -640,7 +643,7 @@ public class MainActivity extends AppCompatActivity {
                 writeLog("归档失败: " + e.getMessage());
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
-                    btnArchive.setEnabled(true);
+                    enableButtons(true);
                     Toast.makeText(this, "归档失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 });
             }

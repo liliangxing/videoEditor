@@ -91,6 +91,13 @@
         android:text="📁 选择视频"
         android:layout_margin="8dp" />
 
+    <Button
+        android:id="@+id/btnCutVideo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="✂ 切割视频"
+        android:layout_margin="8dp" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

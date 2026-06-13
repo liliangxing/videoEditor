@@ -59,7 +59,7 @@ public class MainActivity extends AppCompatActivity {
     private SeekBar seekBarStart, seekBarEnd;
     private TextView txtStartTime, txtCurrentTime, txtEndTime;
     private ProgressBar progressBar;
-    private Button btnSelectVideo, btnExtractAudio, btnExtractMP3, btnArchive;
+    private Button btnSelectVideo, btnCutVideo, btnExtractAudio, btnExtractMP3, btnArchive;
     
     private VideoPlayerManager videoPlayerManager;
     private String currentVideoPath = null;
@@ -111,10 +111,12 @@ public class MainActivity extends AppCompatActivity {
         txtEndTime = findViewById(R.id.txtEndTime);
         progressBar = findViewById(R.id.progressBar);
         btnSelectVideo = findViewById(R.id.btnSelectVideo);
+        btnCutVideo = findViewById(R.id.btnCutVideo);
         btnExtractAudio = findViewById(R.id.btnExtractAudio);
         btnExtractMP3 = findViewById(R.id.btnExtractMP3);
         btnArchive = findViewById(R.id.btnArchive);
         
+        btnCutVideo.setEnabled(false);
         btnExtractAudio.setEnabled(false);
         btnExtractMP3.setEnabled(false);
         
@@ -288,6 +290,7 @@ public class MainActivity extends AppCompatActivity {
             if (checkStoragePermission()) pickVideo();
         });
         
+        btnCutVideo.setOnClickListener(v -> executeCutVideo());
         btnExtractAudio.setOnClickListener(v -> extractAudio("m4a", "audio/mp4", "AAC"));
         btnExtractMP3.setOnClickListener(v -> extractAudio("mp3", "audio/mpeg", "MP3"));
         btnArchive.setOnClickListener(v -> archiveVideos());
@@ -310,6 +313,7 @@ public class MainActivity extends AppCompatActivity {
                                 writeLog("✅ 缓存成功：" + tempVideoFile.length() + "B");
                                 currentVideoPath = tempVideoFile.getAbsolutePath();
                                 runOnUiThread(() -> {
+                                    btnCutVideo.setEnabled(true);
                                     btnExtractAudio.setEnabled(true);
                                     btnExtractMP3.setEnabled(true);
                                     if (videoPlayerManager != null) {
@@ -370,6 +374,68 @@ public class MainActivity extends AppCompatActivity {
             .setNegativeButton("取消", null)
             .setCancelable(false)
             .show();
+    }
+
+    private void executeCutVideo() {
+        if (currentVideoPath == null || cutStartMs >= cutEndMs) {
+            showErrorDialog("错误", "请先设置有效的切割范围");
+            return;
+        }
+        
+        writeLog("===开始切割视频===");
+        writeLog("源文件：" + currentVideoPath);
+        writeLog("切割范围：" + formatTime(cutStartMs) + " - " + formatTime(cutEndMs));
+        
+        progressBar.setVisibility(ProgressBar.VISIBLE);
+        enableButtons(false);
+        
+        File outputDir = new File(getCacheDir(), "cut_video");
+        if (!outputDir.exists()) outputDir.mkdirs();
+        
+        long timestamp = System.currentTimeMillis();
+        String outputPath = outputDir.getAbsolutePath() + "/cut_" + timestamp + ".mp4";
+        
+        double startSec = cutStartMs / 1000.0;
+        double endSec = cutEndMs / 1000.0;
+        
+        String cmd = "-y -i " + quotePath(currentVideoPath) + 
+                     " -ss " + startSec + 
+                     " -to " + endSec + 
+                     " -c copy " + 
+                     quotePath(outputPath);
+        
+        writeLog("FFmpeg 命令：" + cmd);
+        
+        final long startTime = System.currentTimeMillis();
+        FFmpegSession session = FFmpegKit.executeAsync(cmd, completedSession -> {
+            ReturnCode returnCode = completedSession.getReturnCode();
+            String output = completedSession.getOutput();
+            long duration = System.currentTimeMillis() - startTime;
+            
+            if (ReturnCode.isSuccess(returnCode)) {
+                File outputFile = new File(outputPath);
+                writeLog("✅ 切割成功，耗时：" + duration + "ms, 文件大小：" + outputFile.length() + "B");
+                
+                saveToPublicVideo(outputFile, "cut_" + timestamp + ".mp4", "video/mp4");
+                
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    enableButtons(true);
+                    Toast.makeText(this, "视频切割成功！", Toast.LENGTH_SHORT).show();
+                    showSuccessDialog("已保存：cut_" + timestamp + ".mp4");
+                });
+            } else {
+                writeLog("❌ 切割失败，耗时：" + duration + "ms");
+                writeLog("错误详情：" + output);
+                
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    enableButtons(true);
+                    Toast.makeText(this, "失败：" + output, Toast.LENGTH_LONG).show();
+                    showErrorDialog("切割失败", output);
+                });
+            }
+        });
     }
 
     private void extractAudio(String format, String mimeType, String formatName) {
@@ -466,8 +532,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void enableButtons(boolean enabled) {
+        btnCutVideo.setEnabled(enabled && currentVideoPath != null);
         btnExtractAudio.setEnabled(enabled && currentVideoPath != null);
         btnExtractMP3.setEnabled(enabled && currentVideoPath != null);
+        btnArchive.setEnabled(enabled);
     }
 
     private String quotePath(String path) {
@@ -475,6 +543,36 @@ public class MainActivity extends AppCompatActivity {
             return "\"" + path + "\"";
         }
         return path;
+    }
+
+    private void saveToPublicVideo(File sourceFile, String fileName, String mimeType) {
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Video.Media.DISPLAY_NAME, fileName);
+            values.put(MediaStore.Video.Media.MIME_TYPE, mimeType);
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES);
+            }
+            
+            Uri collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+            Uri itemUri = getContentResolver().insert(collection, values);
+            
+            if (itemUri != null) {
+                try (OutputStream out = getContentResolver().openOutputStream(itemUri);
+                     FileInputStream in = new FileInputStream(sourceFile)) {
+                    byte[] buffer = new byte[8192];
+                    int len;
+                    while ((len = in.read(buffer)) > 0) {
+                        out.write(buffer, 0, len);
+                    }
+                }
+                writeLog("✓ 已保存到 Movies: " + fileName);
+            }
+        } catch (Exception e) {
+            writeLog("✗ 保存失败：" + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     private void saveToPublicMusic(File sourceFile, String fileName, String mimeType) {
@@ -630,8 +728,9 @@ public class MainActivity extends AppCompatActivity {
 
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
-                    btnArchive.setEnabled(true);
-                    Toast.makeText(this, "归档完成，原始 MP4 已删除", Toast.LENGTH_LONG).show();
+                    enableButtons(true);
+                    Toast.makeText(this, "归档完成，共 " + videoFiles.length + " 个文件", Toast.LENGTH_LONG).show();
+                    showSuccessDialog("原始 MP4 已删除\n已保存到 " + sourceDir.getParent());
                 });
 
                 writeLog("归档完成：" + videoFiles.length + " 个文件");
@@ -640,8 +739,9 @@ public class MainActivity extends AppCompatActivity {
                 writeLog("归档失败: " + e.getMessage());
                 runOnUiThread(() -> {
                     progressBar.setVisibility(ProgressBar.GONE);
-                    btnArchive.setEnabled(true);
+                    enableButtons(true);
                     Toast.makeText(this, "归档失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    showErrorDialog("归档失败", e.getMessage());
                 });
             }
         }).start();

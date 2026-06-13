@@ -424,8 +424,8 @@ public class MainActivity extends AppCompatActivity {
         
         String cmd;
         if ("mp3".equals(format)) {
-            // Use libmp3lame encoder for MP3 with proper parameters
-            cmd = "-y -i " + quotePath(currentVideoPath) + " -vn -codec:a libmp3lame -qscale:a 2 " + quotePath(outputPath);
+            // Use built-in mp3 encoder (FFmpeg-Kit doesn't include libmp3lame)
+            cmd = "-y -i " + quotePath(currentVideoPath) + " -vn -acodec mp3 -ar 44100 -ac 2 -ab 192k " + quotePath(outputPath);
         } else {
             cmd = "-y -i " + quotePath(currentVideoPath) + " -vn -c:a aac -b:a 192k -ar 44100 -ac 2 " + quotePath(outputPath);
         }
